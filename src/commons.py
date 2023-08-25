@@ -36,8 +36,8 @@ class MLP(nn.Module):
 class TransformerBlock(nn.Module):
     h_dim: int
     num_heads: int
-    dtype: Dtype = jnp.float32
-    drop_p: float = 0.
+    dtype: Dtype
+    drop_p: float
 
     @nn.compact
     def __call__(self, x, mask=None):  # x.shape = (batch_size, seq_len, h_dim)

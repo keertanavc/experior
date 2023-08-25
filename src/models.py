@@ -4,24 +4,31 @@ import flax.linen as nn
 import jax.numpy as jnp
 import jax.scipy.stats as jstats
 
-from functools import partial
+from flax.training import train_state
 
-from src.configs import TransformerPolicyConfig
+from src.configs import TransformerPolicyConfig, BetaPriorConfig
 from src.commons import TransformerBlock
 
 
 class BetaPrior(nn.Module):
     """A beta prior distribution over arm rewards for a Bernoulli bandit."""
 
-    num_actions: int
+    config: BetaPriorConfig
     epsilon: float = 1e-3
-    init_range: float = 5
 
     def setup(self):
-        self.alphas_sq = self.param('alphas_sq', lambda rng, x: self.init_range * jax.random.uniform(
-            rng) * jnp.ones(x), (self.num_actions,))  # TODO initialization
-        self.betas_sq = self.param(
-            'betas_sq', lambda rng, x: self.init_range * jax.random.uniform(rng) * jnp.ones(x), (self.num_actions,))
+        if self.config.init_alpha is None:
+            alpha_init_fn = lambda rng, shape: 5. * jax.random.uniform(rng) * jnp.ones(shape)
+        else:
+            alpha_init_fn = lambda rng, shape: self.config.init_alpha * jnp.ones(shape)
+
+        if self.config.init_beta is None:
+            beta_init_fn = lambda rng, shape: 5. * jax.random.uniform(rng) * jnp.ones(shape)
+        else:
+            beta_init_fn = lambda rng, shape: self.config.init_beta * jnp.ones(shape)
+
+        self.alphas_sq = self.param('alphas_sq', alpha_init_fn, (self.config.num_actions,))
+        self.betas_sq = self.param('betas_sq', beta_init_fn, (self.config.num_actions,))
 
     def log_prob(self, mu):
         """Returns the log probability of a given mean vector."""
@@ -36,7 +43,20 @@ class BetaPrior(nn.Module):
         """Returns a sample from the prior."""
         alphas = self.alphas_sq ** 2 + self.epsilon
         betas = self.betas_sq ** 2 + self.epsilon
-        return jax.random.beta(rng_key, a=alphas, b=betas, shape=(size, self.num_actions))
+        return jax.random.beta(rng_key, a=alphas, b=betas,
+                               shape=(size, self.config.num_actions))
+
+    @classmethod
+    def create_state(cls, rng_key, optimizer, conf: BetaPriorConfig) -> train_state.TrainState:
+        """Returns an initial state for the prior."""
+        prior_model = cls(config=conf)
+        variables = prior_model.init(
+            rng_key, jnp.ones((1, conf.num_actions)))
+
+        prior_state = train_state.TrainState.create(
+            apply_fn=prior_model.apply, params=variables['params'], tx=optimizer)
+
+        return prior_state
 
 
 class Policy(nn.Module):
@@ -48,10 +68,11 @@ class Policy(nn.Module):
     config: TransformerPolicyConfig
 
     @nn.compact
-    def __call__(self, timesteps, actions, rewards):
+    def __call__(self, rng_key, timesteps, actions, rewards):
         """Returns the log-probability distribution over actions for a given history of steps.
 
         Args:
+            rng_key: A JAX random key.
             timesteps: The history of timesteps, shape (batch_size, T).
             actions: The history of actions, shape (batch_size, T).
             rewards: The history of rewards, shape (batch_size, T).
@@ -93,59 +114,16 @@ class Policy(nn.Module):
         log_probs = nn.log_softmax(action_logits)
         return log_probs  # shape: (B, num_actions)
 
+    @classmethod
+    def create_state(cls, rng_key, optimizer,
+                     conf: TransformerPolicyConfig) -> train_state.TrainState:
+        """Returns an initial state for the policy."""
+        policy = cls(config=conf)
+        key1, key2 = jax.random.split(rng_key)
+        variables = policy.init(key1, key2, jnp.ones((1, 2), dtype=jnp.int32),
+                                jnp.ones((1, 2), dtype=jnp.int32), jnp.ones((1, 2)))
 
-@partial(jax.jit, static_argnames=('policy_fn', 'horizon'))
-def policy_rollout(policy_fn, rng_key, mu_vectors, horizon):
-    """Returns a rollout of the policy, i.e. a sequence of actions and rewards.
+        policy_state = train_state.TrainState.create(
+            apply_fn=policy.apply, params=variables['params'], tx=optimizer)
 
-    Args:
-      policy_fn: A function that takes timesteps, actions, rewards and returns
-        a log-probability distribution over actions.
-      rng_key: A JAX random key.
-      mu_vectors: Samples from the prior over means, shape (n_samples, num_actions).
-      horizon: The length of the rollout.
-
-    # TODO reduce the variance by outputting the means and log_probs of all the actions.
-    # TODO optimize more
-    Returns:
-        actions: The sequence of actions, shape (n_samples, horizon).
-        rewards: The sequence of rewards, shape (n_samples, horizon).
-        log_probs: The log-probabilities of the taken actions, shape (n_samples, horizon).
-    """
-    def rollout_1d(mu, key):
-        # mu shape: (num_actions,)
-        def policy_step(state_input, _):
-            i, time_steps, actions, rewards, rng = state_input
-
-            # t = jax.lax.dynamic_slice(time_steps, [0], [i+1])
-            # a = jax.lax.dynamic_slice(actions, [0], [i+1])
-            # r = jax.lax.dynamic_slice(rewards, [0], [i+1])
-            # shape: (num_actions,)
-            log_prob = policy_fn(time_steps, actions, rewards)
-            rng, key = jax.random.split(rng)
-            new_action = jax.random.categorical(key, log_prob)
-
-            rng, key = jax.random.split(rng)
-            new_reward = jax.random.bernoulli(key, mu[new_action])
-
-            actions = actions.at[i+1].set(new_action)
-            rewards = rewards.at[i+1].set(new_reward)
-            carry = (i + 1, time_steps, actions, rewards, rng)
-            return carry, log_prob[new_action]
-
-        # TODO the first step is considered 0 with zero action and reward
-        init_val = (-1,
-                    jnp.arange(horizon),
-                    jnp.zeros(horizon, dtype=jnp.int32),
-                    jnp.zeros(horizon, dtype=jnp.float32),
-                    key)
-
-        (_, _, actions, rewards, _), log_probs = jax.lax.scan(
-            policy_step, init_val, (), length=horizon)
-        return actions, rewards, log_probs
-
-    n_samples = mu_vectors.shape[0]
-    rng_keys = jax.random.split(rng_key, n_samples)
-    return jax.vmap(rollout_1d, in_axes=(0, 0), out_axes=(0, 0, 0))(mu_vectors, rng_keys)
-
-    # means = mu_vectors[jnp.arange(n_samples)[:, None], actions] # shape: (n_samples, horizon)
+        return policy_state

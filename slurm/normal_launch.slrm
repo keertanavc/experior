@@ -1,0 +1,10 @@
+#!/bin/bash
+#SBATCH --job-name=tracee
+#SBATCH -p a40,t4v2,rtx6000
+#SBATCH --gres=gpu:1
+#SBATCH --qos=normal
+#SBATCH -c 4
+#SBATCH --mem=24GB
+#SBATCH --output=./slurm/run-%j.log
+
+$@

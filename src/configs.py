@@ -1,22 +1,58 @@
-class TransformerPolicyConfig:
-    def __init__(self, horizon, num_actions, n_blocks, h_dim, num_heads, drop_p, dtype):
-        self.horizon = horizon
-        self.num_actions = num_actions
-        self.n_blocks = n_blocks
-        self.h_dim = h_dim
-        self.drop_p = drop_p
-        self.num_heads = num_heads
-        self.dtype = dtype
+from pydantic import BaseModel, validator
+from typing import Any, Optional
+
+import jax.numpy as jnp
+
+class TransformerPolicyConfig(BaseModel):
+    horizon: int
+    num_actions: int
+    n_blocks: int
+    h_dim: int
+    num_heads: int
+    drop_p: float
+    dtype: Any = jnp.float32
 
 
-class OptimizerConfig:
-    def __init__(self, policy_lr, prior_lr, mc_samples):
-        self.policy_lr = policy_lr
-        self.prior_lr = prior_lr
-        self.mc_samples = mc_samples
+class WandbConfig(BaseModel):
+    project: str
+    entity: Optional[str]
+    log_every_steps: int
+    run_name: Optional[str]
+    run_id: Optional[str]
+    resume: bool = False
 
 
-class GlobalConfig:
-    def __init__(self, seed, epochs):
-        self.seed = seed
-        self.epochs = epochs
+class BetaPriorConfig(BaseModel):
+    num_actions: int
+    init_alpha: Optional[float]
+    init_beta: Optional[float]
+
+
+class TrainerConfig(BaseModel):
+    policy_lr: float
+    prior_lr: float
+    monte_carlo_samples: int
+    epochs: int
+    batch_size: int
+
+
+class ExperiorConfig(BaseModel):
+    policy: TransformerPolicyConfig
+    prior: BetaPriorConfig
+    train: TrainerConfig
+    fix_prior: bool
+    seed: int
+    test_run: bool
+    wandb: WandbConfig
+    out_dir: str
+    save_every_steps: int
+    keep_every_steps: int
+    ckpt_dir: Optional[str]
+
+    @validator('prior')
+    def prior_validation(cls, prior_value, values, field, config):
+        num_actions = values['policy'].num_actions
+
+        assert prior_value.num_actions == num_actions, \
+            f"Prior num_actions ({prior_value.num_actions}) must match policy num_actions ({num_actions})"
+        return prior_value

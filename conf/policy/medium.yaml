@@ -1,0 +1,3 @@
+n_blocks: 6
+h_dim: 128
+num_heads: 4

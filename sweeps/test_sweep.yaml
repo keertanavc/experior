@@ -1,0 +1,22 @@
+---
+program: train.py
+name: test_feasible
+method: grid
+metric:
+    goal: minimize
+    name: loss
+parameters:
+    policy:
+        values: [small, medium]
+
+    train.policy_lr:
+        values: [0.001, 0.0001]
+
+    train.monte_carlo_samples:
+      values: [50, 100, 200]
+
+command:
+    - ${env}
+    - ./slurm/train_runner.sh
+    - ${args_no_hyphens}
+    - train.epochs=2000
