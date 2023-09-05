@@ -31,8 +31,12 @@ class PRNGSequence:
     def __init__(self, key_or_seed):
         if isinstance(key_or_seed, int):
             key_or_seed = jax.random.PRNGKey(key_or_seed)
-        elif (hasattr(key_or_seed, "shape") and (not key_or_seed.shape) and
-              hasattr(key_or_seed, "dtype") and key_or_seed.dtype == jnp.int32):
+        elif (
+            hasattr(key_or_seed, "shape")
+            and (not key_or_seed.shape)
+            and hasattr(key_or_seed, "dtype")
+            and key_or_seed.dtype == jnp.int32
+        ):
             key_or_seed = jax.random.PRNGKey(key_or_seed)
         self._key = key_or_seed
 
@@ -47,7 +51,9 @@ class TrainState(train_state.TrainState):
     init_stats: Variables
     init_params: Params
 
-    def init_opt_state(self):  # Initializes the optimizer state. TODO make sure it's correct
+    def init_opt_state(
+        self,
+    ):  # Initializes the optimizer state. TODO make sure it's correct
         new_opt_state = self.tx.init(self.params)
         return self.replace(opt_state=new_opt_state)
 
@@ -65,11 +71,12 @@ def init_run_dir(conf: ExperiorConfig) -> ExperiorConfig:
         run_name = f"{w1}_{w2}"
 
     out_dir = os.path.join(conf.out_dir, run_name)
+    ckpt_dir = os.path.join(out_dir, "ckpt")
 
     config_yaml = os.path.join(out_dir, "config.yaml")
     if os.path.exists(config_yaml):
         with open(config_yaml) as fp:
-            old_conf = ExperiorConfig(**yaml.safe_load(fp))
+            old_conf = ExperiorConfig(**yaml.load(fp, Loader=yaml.Loader))
         run_id = old_conf.wandb.run_id
     else:
         run_id = wandb.util.generate_id()
@@ -77,15 +84,18 @@ def init_run_dir(conf: ExperiorConfig) -> ExperiorConfig:
 
     if not os.path.exists(out_dir):
         os.makedirs(out_dir)
+        os.makedirs(ckpt_dir)
         resume = False
-    elif not os.path.exists(os.path.join(out_dir, "state.pt")):
+    elif not os.path.exists(ckpt_dir):
+        os.makedirs(ckpt_dir)
         resume = False
 
     conf.out_dir = out_dir
-    conf.ckpt_dir = os.path.join(out_dir, "ckpt")
+    conf.ckpt_dir = ckpt_dir
     conf.wandb.resume = resume
     conf.wandb.run_id = run_id
     conf.wandb.run_name = run_name
-    OmegaConf.save(conf.dict(), os.path.join(out_dir, "config.yaml"))
+    with open(config_yaml, "w") as fp:
+        yaml.dump(conf.dict(), fp, default_flow_style=False)
 
     return conf

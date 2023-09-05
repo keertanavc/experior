@@ -1,11 +1,11 @@
-from pydantic import BaseModel, validator
-from typing import Any, Optional
+from pydantic import BaseModel
+from typing import Any, Optional, Union
 
 import jax.numpy as jnp
 
+
 class TransformerPolicyConfig(BaseModel):
     horizon: int
-    num_actions: int
     n_blocks: int
     h_dim: int
     num_heads: int
@@ -26,6 +26,7 @@ class BetaPriorConfig(BaseModel):
     num_actions: int
     init_alpha: Optional[float]
     init_beta: Optional[float]
+    epsilon: float = 1e-3
 
 
 class TrainerConfig(BaseModel):
@@ -34,12 +35,13 @@ class TrainerConfig(BaseModel):
     monte_carlo_samples: int
     epochs: int
     batch_size: int
+    max_horizon: int
 
 
 class ExperiorConfig(BaseModel):
-    policy: TransformerPolicyConfig
-    prior: BetaPriorConfig
-    train: TrainerConfig
+    policy: Union[TransformerPolicyConfig, Any]
+    prior: Union[BetaPriorConfig, Any]
+    trainer: TrainerConfig
     fix_prior: bool
     seed: int
     test_run: bool
@@ -48,11 +50,3 @@ class ExperiorConfig(BaseModel):
     save_every_steps: int
     keep_every_steps: int
     ckpt_dir: Optional[str]
-
-    @validator('prior')
-    def prior_validation(cls, prior_value, values, field, config):
-        num_actions = values['policy'].num_actions
-
-        assert prior_value.num_actions == num_actions, \
-            f"Prior num_actions ({prior_value.num_actions}) must match policy num_actions ({num_actions})"
-        return prior_value

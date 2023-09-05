@@ -1,10 +1,8 @@
 {
     "files.insertFinalNewline": true,
     "files.trimFinalNewlines": true,
+    "python.languageServer": "Pylance",
     "files.trimTrailingWhitespace": true,
-    "files.associations": {
-        ".pylintrc": "ini"
-    },
     "python.testing.unittestEnabled": false,
     "python.testing.nosetestsEnabled": false,
     "python.testing.pytestEnabled": true,
@@ -14,19 +12,18 @@
             80
         ],
         "editor.tabSize": 2,
-        "editor.defaultFormatter": "ms-python.autopep8",
+        "editor.defaultFormatter": "ms-python.black-formatter",
         "editor.formatOnSave": true,
         "editor.detectIndentation": false
     },
-    "black-formatter.path": [
-        "pyink"
-    ],
     "files.watcherExclude": {
-        "**/.git/**": true
+        "**/.git/**": true,
+        "**/output/**": true,
+        "**/slurm/**": true
     },
     "files.exclude": {
         "**/__pycache__": true,
         "**/.pytest_cache": true,
         "**/*.egg-info": true
-    }
+    },
 }

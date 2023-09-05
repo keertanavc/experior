@@ -1,5 +1,5 @@
 #!/bin/bash
-ln -sfn /checkpoint/${USER}/* $PWD/output/runs
+ln -sfn /checkpoint/${USER}/${SLURM_JOB_ID} $PWD/output/runs/${SLURM_JOB_ID}
 
 touch /checkpoint/${USER}/${SLURM_JOB_ID}/DELAYPURGE
 
