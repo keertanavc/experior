@@ -69,7 +69,8 @@ class BayesRegretTrainer:
                 # shape: (n_samples, horizon)
                 rtg = jax.lax.cumsum(means, axis=1, reverse=True)
 
-                # shape: (n_samples, horizon, num_actions) TODO check this
+                # shape: (n_samples, horizon, num_actions)
+                #  TODO check this (do we need to sum over actions)
                 action_rtg = (rtg - means)[:, :, None] + mu_vectors[:, None, :]
                 policy_probs = jax.lax.stop_gradient(jnp.exp(policy_log_p))
 
@@ -181,7 +182,7 @@ class BayesRegretTrainer:
             )
 
         models = get_baselines(self.conf)
-        models["our"] = policy_fn
+        models[self.conf.policy.name] = policy_fn
 
         metrics = {}
 

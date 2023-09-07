@@ -45,17 +45,22 @@ def policy_rollout(policy_fn, rng_key, mu_vectors, horizon):
         carry = (i + 1, time_steps, actions, rewards, rng)
         return carry, log_prob
 
-    # TODO the first step is considered 0 with zero action and reward
+    # The first step is considered 0 with zero action and reward
+    # However, history starts from 1
     init_val = (
-        -1,
-        jnp.zeros((n_envs, horizon), dtype=jnp.int32),
-        jnp.zeros((n_envs, horizon), dtype=jnp.int32),
-        jnp.zeros((n_envs, horizon), dtype=jnp.float32),
+        0,
+        jnp.zeros((n_envs, horizon + 1), dtype=jnp.int32),
+        jnp.zeros((n_envs, horizon + 1), dtype=jnp.int32),
+        jnp.zeros((n_envs, horizon + 1), dtype=jnp.float32),
         rng_key,
     )
 
     (_, _, actions, rewards, _), log_probs = jax.lax.scan(
-        policy_step, init_val, (), length=horizon
+        policy_step, init_val, (), length=horizon + 1
     )
 
-    return actions, rewards, jnp.transpose(log_probs, axes=(1, 0, 2))
+    return (
+        actions[:, 1:],
+        rewards[:, 1:],
+        jnp.transpose(log_probs, axes=(1, 0, 2))[:, 1:, :],
+    )

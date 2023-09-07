@@ -5,12 +5,18 @@ import jax.numpy as jnp
 
 
 class TransformerPolicyConfig(BaseModel):
+    name: str = "transformer"
     horizon: int
     n_blocks: int
     h_dim: int
     num_heads: int
-    drop_p: float
+    drop_p: float = 0.
     dtype: Any = jnp.float32
+
+
+class SoftElimPolicyConfig(BaseModel):
+    name: str = "softelim"
+    horizon: int
 
 
 class WandbConfig(BaseModel):
@@ -23,6 +29,7 @@ class WandbConfig(BaseModel):
 
 
 class BetaPriorConfig(BaseModel):
+    name: str = "beta"
     num_actions: int
     init_alpha: Optional[float]
     init_beta: Optional[float]
@@ -39,8 +46,8 @@ class TrainerConfig(BaseModel):
 
 
 class ExperiorConfig(BaseModel):
-    policy: Union[TransformerPolicyConfig, Any]
-    prior: Union[BetaPriorConfig, Any]
+    policy: Union[TransformerPolicyConfig, SoftElimPolicyConfig]
+    prior: BetaPriorConfig
     trainer: TrainerConfig
     fix_prior: bool
     seed: int

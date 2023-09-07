@@ -4,92 +4,123 @@ import tqdm
 
 import jax.numpy as jnp
 
-from src.configs import TransformerPolicyConfig, BetaPriorConfig
-from src.models import TransformerPolicy, BetaPrior
+from src.models import get_policy, get_prior
 from src.rollout import policy_rollout
 from src.utils import PRNGSequence
 
 from flax.training import train_state
 
+from tests import TEST_CONFIG
+
+from copy import deepcopy
+
 # TODO best way to write test for jax?
 
 
-def test_policy():
-    # Configuration
-    config = TransformerPolicyConfig(
-        horizon=10,
-        h_dim=64,
-        dtype=jnp.float32,
-        num_heads=4,
-        drop_p=0.1,
-        n_blocks=3,
-        num_actions=5,
-    )
-
+def test_transformer_policy():
     # Creating test data
-    batch_size = 2
-    T = 5
+    batch_size = TEST_CONFIG.trainer.batch_size
+    T = TEST_CONFIG.trainer.max_horizon
+    num_actions = TEST_CONFIG.prior.num_actions
+
     rng = PRNGSequence(0)
-    timesteps = jnp.arange(batch_size * T).reshape(batch_size, T) % config.horizon
-    actions = jax.random.randint(next(rng), (batch_size, T), 0, config.num_actions)
+    timesteps = jnp.arange(batch_size * T).reshape(batch_size, T) % T
+    actions = jax.random.randint(next(rng), (batch_size, T), 0, num_actions)
     rewards = jax.random.normal(next(rng), (batch_size, T))
 
-    # Initialize the policy
-    policy = TransformerPolicy(config=config)
-    params = policy.init(next(rng), next(rng), timesteps, actions, rewards)
+    # Initialize and call the policy
+    policy_state = get_policy(TEST_CONFIG).create_state(
+        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=TEST_CONFIG
+    )
 
-    # Test call
-    action_probs = jnp.exp(policy.apply(params, next(rng), timesteps, actions, rewards))
+    action_log_probs = policy_state.apply_fn(
+        {"params": policy_state.params}, next(rng), timesteps, actions, rewards
+    )
+    action_probs = jnp.exp(action_log_probs)
 
-    assert action_probs.shape == (batch_size, config.num_actions)
+    assert action_probs.shape == (batch_size, num_actions)
     assert jnp.all(action_probs >= 0) and jnp.all(action_probs <= 1)
     assert jnp.allclose(action_probs.sum(axis=1), 1.0)
 
 
-def test_policy_rollout():
-    config = TransformerPolicyConfig(
-        horizon=50,
-        h_dim=32,
-        dtype=jnp.float32,
-        num_heads=2,
-        drop_p=0.1,
-        n_blocks=1,
-        num_actions=5,
-    )
-    rng = PRNGSequence(0)
-    conf = BetaPriorConfig(num_actions=config.num_actions)
-    prior = BetaPrior(conf)
-    params = prior.init(next(rng), jnp.ones((1, config.num_actions)))
-    n_sample = 100
+def test_softelim_policy():
+    conf = deepcopy(TEST_CONFIG)
+    conf.trainer.batch_size = 2
+    conf.trainer.max_horizon = 5
+    conf.prior.num_actions = 2
+    conf.policy.horizon = 5
+    conf.policy.name = "softelim"
+    conf.trainer.monte_carlo_samples = 2
 
-    mu_vectors = prior.apply(
-        params, rng_key=next(rng), size=n_sample, method=prior.sample
+    rng = PRNGSequence(0)
+    timesteps = jnp.array([[0, 1, 2, 3, 4, 0], [0, 1, 2, 3, 4, 5]])
+    actions = jnp.array([[0, 1, 1, 0, 0, 0], [0, 1, 0, 1, 0, 1]])
+    rewards = jnp.array([[1, 0, 1, 0, 1, 1], [0, 1, 1, 0, 0, 0]])
+
+    # Initialize and call the policy
+    policy_state = get_policy(conf).create_state(
+        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=conf
+    )
+
+    action_log_probs = policy_state.apply_fn(
+        {"params": policy_state.params}, next(rng), timesteps, actions, rewards
+    )
+    action_probs = jnp.exp(action_log_probs)
+    S = jnp.exp(jnp.array([[0.0, 0.0], [0.0, -2 * (0.5 - 1 / 3) ** 2 * 3]]))
+    probs = S / S.sum(axis=1, keepdims=True)
+    assert jnp.isclose(action_probs, probs).all()
+
+
+def test_transformer_policy_rollout():
+    return _test_policy_rollout(TEST_CONFIG)
+
+
+def test_softelim_policy_rollout():
+    conf = deepcopy(TEST_CONFIG)
+    conf.policy.name = "softelim"
+
+    return _test_policy_rollout(conf)
+
+
+def _test_policy_rollout(conf):
+    rng = PRNGSequence(0)
+    num_actions = conf.prior.num_actions
+    n_sample = conf.trainer.monte_carlo_samples
+
+    prior_cls = get_prior(conf)
+
+    prior_state = prior_cls.create_state(
+        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=conf
+    )
+
+    mu_vectors = prior_state.apply_fn(
+        {"params": prior_state.params},
+        rng_key=next(rng),
+        size=n_sample,
+        method=prior_cls.sample,
     )
 
     mu_vectors = jax.lax.stop_gradient(mu_vectors)
-    policy = TransformerPolicy(config=config)
-    params = policy.init(
-        next(rng),
-        next(rng),
-        jnp.ones((1, 2), dtype=jnp.int32),
-        jnp.ones((1, 2), dtype=jnp.int32),
-        jnp.ones((1, 2)),
+    policy_state = get_policy(conf).create_state(
+        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=conf
     )
 
     def policy_fn(key, timesteps, actions, rewards):
-        return policy.apply(params, key, timesteps, actions, rewards)
+        return policy_state.apply_fn(
+            {"params": policy_state.params}, key, timesteps, actions, rewards
+        )
 
     actions, rewards, log_policy_probs = policy_rollout(
-        policy_fn, next(rng), mu_vectors, config.horizon
+        policy_fn, next(rng), mu_vectors, conf.policy.horizon
     )
 
     assert (
-        actions.shape == (n_sample, config.horizon)
-        and rewards.shape == (n_sample, config.horizon)
-        and log_policy_probs.shape == (n_sample, config.horizon, conf.num_actions)
+        actions.shape == (n_sample, conf.policy.horizon)
+        and rewards.shape == (n_sample, conf.policy.horizon)
+        and log_policy_probs.shape == (n_sample, conf.policy.horizon, num_actions)
     )
 
-    assert jnp.all(jnp.in1d(actions, jnp.arange(config.num_actions)))
+    assert jnp.all(jnp.in1d(actions, jnp.arange(num_actions)))
     probs = jnp.exp(log_policy_probs)
     assert jnp.all(probs >= 0) and jnp.all(probs <= 1)
     assert jnp.allclose(probs.sum(axis=2), 1.0)
@@ -127,20 +158,18 @@ def test_rollout():
 
 def test_prior():
     rng = PRNGSequence(123)
-    K = 3
+    num_actions = TEST_CONFIG.prior.num_actions
     n_samples = 1000
     epochs = 1000
     data = jax.random.beta(
-        next(rng), a=2 * jnp.ones(K), b=jnp.ones(K), shape=(n_samples, K)
+        next(rng),
+        a=2 * jnp.ones(num_actions),
+        b=jnp.ones(num_actions),
+        shape=(n_samples, num_actions),
     )
 
-    conf = BetaPriorConfig(num_actions=K, init_alpha=2, init_beta=1)
-    model = BetaPrior(conf)
-    variables = model.init(next(rng), jnp.ones((1, K)))
     tx = optax.adam(learning_rate=1e-2)
-    state = train_state.TrainState.create(
-        apply_fn=model.apply, params=variables["params"], tx=tx
-    )
+    state = get_prior(TEST_CONFIG).create_state(next(rng), tx, conf=TEST_CONFIG)
 
     @jax.jit
     def update_step(state, batch):
@@ -159,26 +188,29 @@ def test_prior():
             pbar.update(1)
 
     assert jnp.isclose(
-        state.params["alphas_sq"] ** 2 + BetaPrior.epsilon, 2, atol=1e-1
+        state.params["alphas_sq"] ** 2 + TEST_CONFIG.prior.epsilon, 2, atol=1e-1
     ).all()
     assert jnp.isclose(
-        state.params["betas_sq"] ** 2 + BetaPrior.epsilon, 1, atol=1e-1
+        state.params["betas_sq"] ** 2 + TEST_CONFIG.prior.epsilon, 1, atol=1e-1
     ).all()
 
 
 def test_prior_sample():
-    K = 4
     size = 100
-    conf = BetaPriorConfig(num_actions=K)
-    model = BetaPrior(conf)
+    num_actions = TEST_CONFIG.prior.num_actions
     rng = PRNGSequence(123)
-    variables = model.init(next(rng), jnp.ones((1, K)))
-    samples = model.apply(
-        {"params": variables["params"]},
-        rng_key=next(rng),
-        size=size,
-        method=model.sample,
+
+    prior_cls = get_prior(TEST_CONFIG)
+    state = prior_cls.create_state(
+        next(rng), optax.adam(learning_rate=1e-2), conf=TEST_CONFIG
     )
 
-    assert samples.shape == (size, K)
+    samples = state.apply_fn(
+        {"params": state.params},
+        rng_key=next(rng),
+        size=size,
+        method=prior_cls.sample,
+    )
+
+    assert samples.shape == (size, num_actions)
     assert samples.min() >= 0 and samples.max() <= 1

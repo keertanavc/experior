@@ -12,7 +12,7 @@ from pprint import pprint
 
 # Add resolver for hydra
 OmegaConf.register_new_resolver("eval", eval)
-
+# TODO add baseline
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(conf: ExperiorConfig):
@@ -46,7 +46,6 @@ def main(conf: ExperiorConfig):
     if not conf.test_run:
         trainer.save_metrics(next(rng))
 
-    trainer.ckpt_manager.close()
 
 if __name__ == "__main__":
     main()

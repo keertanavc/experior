@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 
 ##################### Priors #####################
 def get_prior(conf: ExperiorConfig):
-    if conf.prior.__class__.__name__ == "BetaPriorConfig":
+    if conf.prior.name == "beta":
         return BetaPrior
     else:
         raise NotImplementedError
@@ -94,8 +94,10 @@ class BetaPrior(nn.Module, Prior):
 
 ##################### Policies #####################
 def get_policy(conf: ExperiorConfig):
-    if conf.policy.__class__.__name__ == "TransformerPolicyConfig":
+    if conf.policy.name == "transformer":
         return TransformerPolicy
+    elif conf.policy.name == "softelim":
+        return SoftElimPolicy
     else:
         raise NotImplementedError
 
@@ -104,6 +106,7 @@ class Policy(ABC):
     @abstractmethod
     def __call__(self, rng_key, timesteps, actions, rewards):
         """Returns the log-probability distribution over actions for a given history of steps.
+        Note: It gets the history over all the horizon, but it should ignore the steps with zero timesteps.
 
         Args:
             rng_key: A JAX random key.
@@ -113,6 +116,74 @@ class Policy(ABC):
 
         """
         pass
+
+
+class SoftElimPolicy(nn.Module, Policy):
+    """The SoftElim policy in https://arxiv.org/pdf/2006.05094.pdf"""
+
+    config: ExperiorConfig
+    name = "SoftElimPolicy"
+
+    def setup(self):
+        self.w = self.param(
+            "w",
+            lambda rng, shape: jnp.ones(shape),
+            (self.config.prior.num_actions,),
+        )
+
+    def __call__(self, rng_key, timesteps, actions, rewards):
+        """
+        Args:
+            rng_key: A JAX random key.
+            timesteps: The history of timesteps, shape (batch_size, T).
+            actions: The history of actions, shape (batch_size, T).
+            rewards: The history of rewards, shape (batch_size, T).
+
+        """
+        max_t = timesteps.max(axis=1).reshape(-1, 1)  # shape: (batch_size, 1)
+        num_actions = self.config.prior.num_actions
+        # TODO check if the maximum value of timesteps is less than the max_horizon
+
+        # shape: (batch_size, T)
+        idx = (timesteps[:, :] <= max_t) & (timesteps[:, :] > 0)
+
+        weights = jnp.ones_like(actions, dtype=jnp.float32) * idx
+        # count the number of times each action was taken for each batch
+        action_counts = (jnp.eye(num_actions)[actions] * weights[:, :, None]).sum(
+            axis=1
+        )
+
+        # shape: (batch_size, T,  num_actions)
+        aug_rewards = (rewards * idx)[:, :, None] * (
+            actions[:, :, None] == jnp.arange(num_actions)[None, None, :]
+        )
+
+        # shape: (batch_size, num_actions)
+        means = jnp.nan_to_num(jnp.sum(aug_rewards, axis=1) / action_counts)
+        S = 2 * (means.max(axis=1).reshape(-1, 1) - means) ** 2 * action_counts
+
+        return nn.log_softmax(-S / (self.w**2))
+
+    @classmethod
+    def create_state(
+        cls, rng_key, optimizer, conf: ExperiorConfig
+    ) -> train_state.TrainState:
+        """Returns an initial state for the policy."""
+        policy = cls(config=conf)
+        key1, key2 = jax.random.split(rng_key)
+        variables = policy.init(
+            key1,
+            key2,
+            jnp.ones((1, 2), dtype=jnp.int32),
+            jnp.ones((1, 2), dtype=jnp.int32),
+            jnp.ones((1, 2)),
+        )
+
+        policy_state = train_state.TrainState.create(
+            apply_fn=policy.apply, params=variables["params"], tx=optimizer
+        )
+
+        return policy_state
 
 
 class TransformerPolicy(nn.Module, Policy):
@@ -127,7 +198,8 @@ class TransformerPolicy(nn.Module, Policy):
     @nn.compact
     def __call__(self, rng_key, timesteps, actions, rewards):
         """Returns the log-probability distribution over actions for a given history of steps.
-
+        # TODO add masking the inputs with timestep 0
+        # TODO test_horizon instead of max horizon
         Args:
             rng_key: A JAX random key.
             timesteps: The history of timesteps, shape (batch_size, T).
@@ -136,13 +208,11 @@ class TransformerPolicy(nn.Module, Policy):
 
         """
         B, T = timesteps.shape
-        assert (
-            T <= self.config.trainer.max_horizon
-        ), f"Expected a history of at most {self.config.trainer.max_horizon} steps, got {T}"
+        # TODO check if the maximum value of timesteps is less than the max_horizon
 
         # shape: (B, T, h_dim)
         time_embedding = nn.Embed(
-            num_embeddings=self.config.trainer.max_horizon,
+            num_embeddings=self.config.trainer.max_horizon + 1,
             features=self.config.policy.h_dim,
             dtype=self.config.policy.dtype,
         )(timesteps)
