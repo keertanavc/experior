@@ -8,7 +8,6 @@ from src.models import get_policy, get_prior
 from src.rollout import policy_rollout
 from src.utils import PRNGSequence
 
-from flax.training import train_state
 
 from tests import TEST_CONFIG
 

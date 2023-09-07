@@ -12,8 +12,9 @@ from tqdm import tqdm
 
 from src.configs import ExperiorConfig
 from src.models import get_policy, get_prior
+from src.grads import get_policy_grad_estimator
 from src.rollout import policy_rollout
-from src.utils import PRNGKey, PRNGSequence
+from src.utils import PRNGKey
 from src.baselines import get_baselines
 from src.eval import uniform_bayes_regret
 
@@ -36,6 +37,8 @@ class BayesRegretTrainer:
         policy_opt = optax.adamw(learning_rate=self.conf.trainer.policy_lr)
         policy_cls = get_policy(self.conf)
         self.policy_state = policy_cls.create_state(policy_key, policy_opt, self.conf)
+
+        policy_grad_estimator = get_policy_grad_estimator(self.conf)
 
         if not self.conf.test_run:
             ckpt_options = orbax.checkpoint.CheckpointManagerOptions(
@@ -61,28 +64,18 @@ class BayesRegretTrainer:
                     policy_fn, rng_key, mu_vectors, self.conf.policy.horizon
                 )
 
-                # shape: (n_samples, horizon)
-                means = mu_vectors[jnp.arange(self.conf.trainer.batch_size)[:, None], a]
-
-                max_means = jnp.max(mu_vectors, axis=1)  # shape: (n_samples,)
-
-                # shape: (n_samples, horizon)
-                rtg = jax.lax.cumsum(means, axis=1, reverse=True)
-
-                # shape: (n_samples, horizon, num_actions)
-                #  TODO check this (do we need to sum over actions)
-                action_rtg = (rtg - means)[:, :, None] + mu_vectors[:, None, :]
-                policy_probs = jax.lax.stop_gradient(jnp.exp(policy_log_p))
-
-                loss = (
-                    -(action_rtg * policy_log_p * policy_probs)
-                    .sum(axis=2)
-                    .sum(axis=1)
-                    .mean()
+                loss, policy_loss_val = policy_grad_estimator(
+                    a, r, policy_log_p, mu_vectors
                 )
-                out = {"policy_loss": loss}
+                out = {"policy_loss": policy_loss_val}
 
                 if not self.conf.fix_prior:
+                    # shape: (n_samples, horizon)
+                    means = mu_vectors[
+                        jnp.arange(self.conf.trainer.batch_size)[:, None], a
+                    ]
+
+                    max_means = jnp.max(mu_vectors, axis=1)  # shape: (n_samples,)
                     # shape: (n_envs, num_actions)
                     prior_log_p = prior_state.apply_fn(
                         {"params": prior_params}, mu_vectors
@@ -182,7 +175,7 @@ class BayesRegretTrainer:
             )
 
         models = get_baselines(self.conf)
-        models[self.conf.policy.name] = policy_fn
+        models["ours"] = policy_fn
 
         metrics = {}
 
@@ -196,6 +189,7 @@ class BayesRegretTrainer:
                 self.conf.trainer.monte_carlo_samples,
             )
             metrics[name] = regret.tolist()
+            wandb.log({f"{name}_regret": regret[-1]})
 
         with open(save_path, "w") as fp:
             json.dump(metrics, fp, indent=2)

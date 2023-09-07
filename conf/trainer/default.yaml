@@ -1,1 +1,3 @@
-
+policy_grad:
+  name: reinforce
+  var_baseline: opt

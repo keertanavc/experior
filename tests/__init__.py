@@ -4,6 +4,7 @@ from src.configs import (
     BetaPriorConfig,
     TrainerConfig,
     WandbConfig,
+    PolicyGradEstimatorConfig,
 )
 import jax.numpy as jnp
 
@@ -24,6 +25,7 @@ TEST_CONFIG = ExperiorConfig(
         epochs=10,
         batch_size=10,
         max_horizon=10,
+        policy_grad=PolicyGradEstimatorConfig(),
     ),
     fix_prior=False,
     seed=42,

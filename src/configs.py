@@ -1,7 +1,10 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
 from typing import Any, Optional, Union
 
 import jax.numpy as jnp
+
+VAR_BASELINES = ["opt"]
+GRAD_ESTIMATORS = ["reinforce", "binforce"]
 
 
 class TransformerPolicyConfig(BaseModel):
@@ -10,7 +13,7 @@ class TransformerPolicyConfig(BaseModel):
     n_blocks: int
     h_dim: int
     num_heads: int
-    drop_p: float = 0.
+    drop_p: float = 0.0
     dtype: Any = jnp.float32
 
 
@@ -36,6 +39,25 @@ class BetaPriorConfig(BaseModel):
     epsilon: float = 1e-3
 
 
+class PolicyGradEstimatorConfig(BaseModel):
+    name: str = "reinforce"
+    var_baseline: Optional[str]
+
+    # validate baseline
+    @validator("var_baseline")
+    def validate_baseline(cls, v):
+        if v is not None and v not in VAR_BASELINES:
+            raise ValueError(f"var baseline {v} not found in config")
+        return v
+
+    # validate grad estimator
+    @validator("name")
+    def validate_grad_estimator(cls, v):
+        if v not in GRAD_ESTIMATORS:
+            raise ValueError(f"grad estimator {v} not found in config")
+        return v
+
+
 class TrainerConfig(BaseModel):
     policy_lr: float
     prior_lr: float
@@ -43,6 +65,7 @@ class TrainerConfig(BaseModel):
     epochs: int
     batch_size: int
     max_horizon: int
+    policy_grad: PolicyGradEstimatorConfig
 
 
 class ExperiorConfig(BaseModel):
