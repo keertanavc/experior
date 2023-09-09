@@ -4,19 +4,20 @@ import os
 import json
 import wandb
 
-import jax.numpy as jnp
 import orbax.checkpoint
 
 from flax.training import orbax_utils
 from tqdm import tqdm
 
+import jax.numpy as jnp
+
 from src.configs import ExperiorConfig
-from src.models import get_policy, get_prior
-from src.grads import get_policy_grad_estimator
+from src.models import get_policy, get_prior, BetaPrior
+from src.grads import get_policy_grad_estimator, prior_grad_estimator
 from src.rollout import policy_rollout
-from src.utils import PRNGKey
+from src.commons import PRNGKey
 from src.baselines import get_baselines
-from src.eval import uniform_bayes_regret
+from src.eval import bayes_regret
 
 
 class BayesRegretTrainer:
@@ -70,29 +71,22 @@ class BayesRegretTrainer:
                 out = {"policy_loss": policy_loss_val}
 
                 if not self.conf.fix_prior:
-                    # shape: (n_samples, horizon)
-                    means = mu_vectors[
-                        jnp.arange(self.conf.trainer.batch_size)[:, None], a
-                    ]
-
-                    max_means = jnp.max(mu_vectors, axis=1)  # shape: (n_samples,)
                     # shape: (n_envs, num_actions)
                     prior_log_p = prior_state.apply_fn(
                         {"params": prior_params}, mu_vectors
                     )
 
-                    # TODO: make sure this is correct
-                    prior_log_p = jnp.nan_to_num(
-                        prior_log_p, copy=False, neginf=-10, posinf=10
-                    )
-                    T = means.shape[1]
-                    prior_loss = -(
-                        jax.lax.stop_gradient(T * max_means - means.sum(axis=1))
-                        * prior_log_p.sum(axis=1)
-                    ).mean()
+                    prior_loss = prior_grad_estimator(a, mu_vectors, prior_log_p)
+                    loss += prior_loss
                     out["prior_loss"] = prior_loss
                     out["prior_log_probs"] = prior_log_p.mean()
-                    out["max_means"] = max_means.mean()
+
+                    # log prior_params
+                    # TODO maybe cleaner way to do this
+                    if issubclass(prior_cls, BetaPrior):
+                        alpha_beta = jax.tree_map(lambda x: jnp.mean(x), prior_params)
+                        out["alpha"] = alpha_beta["alphas_sq"]
+                        out["beta"] = alpha_beta["betas_sq"]
 
                 return loss, {
                     "loss": loss,
@@ -181,7 +175,7 @@ class BayesRegretTrainer:
 
         for name, model in models.items():
             rng, key = jax.random.split(rng)
-            regret = uniform_bayes_regret(
+            regret = bayes_regret(
                 key,
                 model,
                 self.conf.prior.num_actions,
@@ -205,7 +199,7 @@ class BayesRegretTrainer:
         save_args = orbax_utils.save_args_from_target(ckpt)
         self.ckpt_manager.save(epoch, ckpt, save_kwargs={"save_args": save_args})
 
-    def load_states(self):
+    def load_states(self, step=None):
         target = {
             "policy_model": self.policy_state,
             "prior_model": self.prior_state,
@@ -213,4 +207,6 @@ class BayesRegretTrainer:
             "rng": jax.random.PRNGKey(0),
         }
 
-        return self.ckpt_manager.restore(self.ckpt_manager.latest_step(), items=target)
+        step = step or self.ckpt_manager.latest_step()
+
+        return self.ckpt_manager.restore(step, items=target)

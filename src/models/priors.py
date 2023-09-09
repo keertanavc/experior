@@ -26,6 +26,16 @@ class Prior(ABC):
         pass
 
 
+class UniformPrior(Prior):
+    """A uniform prior distribution over arm rewards for a Bernoulli bandit."""
+
+    def __init__(self, num_actions):
+        self.num_actions = num_actions
+
+    def sample(self, rng_key, size):
+        return jax.random.uniform(rng_key, shape=(size, self.num_actions))
+
+
 class BetaPrior(nn.Module, Prior):
     """A beta prior distribution over arm rewards for a Bernoulli bandit."""
 
@@ -61,8 +71,12 @@ class BetaPrior(nn.Module, Prior):
 
     def log_prob(self, mu):
         """Returns the log probability of a given mean vector."""
-        alphas = jnp.power(self.alphas_sq, 2) + self.config.prior.epsilon
-        betas = jnp.power(self.betas_sq, 2) + self.config.prior.epsilon
+        eps = self.config.prior.epsilon
+        alphas = jnp.power(self.alphas_sq, 2) + eps
+        betas = jnp.power(self.betas_sq, 2) + eps
+
+        # clip mu to avoid numerical issues
+        mu = jnp.clip(mu, eps, 1.0 - eps)
         return jstats.beta.logpdf(mu, alphas, betas)
 
     def __call__(self, mu):

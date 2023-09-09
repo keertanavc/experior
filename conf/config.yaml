@@ -1,7 +1,7 @@
 defaults:
-  - trainer: default
-  - policy: small
-  - prior: default
+  - trainer: reinforce
+  - policy: softelim
+  - prior: uniform
   - hydra: default
   - wandb: default
   - _self_
@@ -10,8 +10,6 @@ defaults:
 
 prior:
   num_actions: 5
-  init_alpha: 1.
-  init_beta: 1.
 
 policy:
   horizon: 100

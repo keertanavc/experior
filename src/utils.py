@@ -1,5 +1,3 @@
-from typing import Tuple
-from src.configs import ExperiorConfig
 from random_word import RandomWords
 
 import jax.numpy as jnp
@@ -11,19 +9,9 @@ import wandb
 
 from flax.training import train_state
 
-from typing import Any
-from omegaconf import OmegaConf
-
-import optax
-
-PRNGKey = Any
-Params = Any
-Variables = Any
-OptState = optax.OptState
-
-Shape = Tuple[int, ...]
-Dtype = Any
-Array = Any
+from src.configs import ExperiorConfig
+from src.trainer import BayesRegretTrainer
+from src.commons import Params, Variables, Callable
 
 
 # adapted from https://github.com/unstable-zeros/tasil
@@ -99,3 +87,34 @@ def init_run_dir(conf: ExperiorConfig) -> ExperiorConfig:
         yaml.dump(conf.dict(), fp, default_flow_style=False)
 
     return conf
+
+
+# TODO something is wrong with ckpt
+def get_policy_prior_from_run(
+    run_path, step=None, only_conf=False
+) -> (Callable, Callable, ExperiorConfig):
+    with open(os.path.join(run_path, "config.yaml")) as fp:
+        conf = ExperiorConfig(**yaml.load(fp, Loader=yaml.Loader))
+    if only_conf:
+        return None, conf
+
+    trainer = BayesRegretTrainer(conf)
+    rng = PRNGSequence(0)
+    trainer.initialize(next(rng))
+    ckpt = trainer.load_states(step)
+    # TODO fix this
+    policy_state = ckpt["policy_model"]
+    prior_state = ckpt["prior_model"]
+
+    def policy_fn(key, t, a, r):
+        return policy_state.apply_fn({"params": policy_state.params}, key, t, a, r)
+
+    def prior_fn(key, size):
+        return prior_state.apply_fn(
+            {"params": prior_state.params},
+            rng_key=key,
+            size=size,
+            method="sample",
+        )
+
+    return policy_fn, prior_fn, conf

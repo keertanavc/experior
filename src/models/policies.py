@@ -78,7 +78,10 @@ class SoftElimPolicy(nn.Module, Policy):
         )
 
         # shape: (batch_size, num_actions)
-        means = jnp.nan_to_num(jnp.sum(aug_rewards, axis=1) / action_counts)
+        div_action_cnt = jnp.where(
+            action_counts == 0, jnp.ones_like(action_counts), action_counts
+        )
+        means = jnp.sum(aug_rewards, axis=1) / div_action_cnt
         S = 2 * (means.max(axis=1).reshape(-1, 1) - means) ** 2 * action_counts
 
         return nn.log_softmax(-S / (self.w**2))

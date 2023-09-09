@@ -2,11 +2,18 @@ import jax
 import jax.numpy as jnp
 
 from src.rollout import policy_rollout
+from src.models import UniformPrior
+
+# TODO better document
 
 
-def uniform_bayes_regret(rng_key, policy_fn, num_actions, horizon, n_envs):
+def bayes_regret(
+    rng_key, policy_fn, num_actions: jnp.array, horizon, n_envs, prior_fn=None
+):
+    if prior_fn is None:
+        prior_fn = UniformPrior(num_actions).sample
     rng_key, key = jax.random.split(rng_key)
-    mu_vectors = jax.random.uniform(key, shape=(n_envs, num_actions))
+    mu_vectors = prior_fn(key, n_envs)
 
     rng_key, key = jax.random.split(rng_key)
     actions, _, _ = policy_rollout(policy_fn, key, mu_vectors, horizon)

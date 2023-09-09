@@ -2,13 +2,15 @@ import hydra
 import wandb
 
 from omegaconf import OmegaConf
-from tqdm import tqdm
 
 from src.trainer import BayesRegretTrainer
 from src.utils import PRNGSequence, init_run_dir
 from src.configs import ExperiorConfig
 
 from pprint import pprint
+
+from jax import config
+config.update("jax_debug_nans", True)
 
 # Add resolver for hydra
 OmegaConf.register_new_resolver("eval", eval)
@@ -20,9 +22,9 @@ def main(conf: ExperiorConfig):
 
     if conf.test_run:
         pprint(conf.dict())
-        conf.trainer.epochs = 100
-        conf.trainer.monte_carlo_samples = 64
-        conf.trainer.batch_size = 16
+        # conf.trainer.epochs = 100
+        # conf.trainer.monte_carlo_samples = 64
+        # conf.trainer.batch_size = 16
     else:
         conf = init_run_dir(conf)
         wandb.init(

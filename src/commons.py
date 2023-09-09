@@ -1,8 +1,16 @@
 import flax.linen as nn
-from src.utils import PRNGKey, Shape, Dtype, Array
-from typing import Callable, Sequence
 
 import jax.numpy as jnp
+
+from typing import Callable, Sequence, Any, Tuple
+
+PRNGKey = Any
+Params = Any
+Variables = Any
+
+Shape = Tuple[int, ...]
+Dtype = Any
+Array = Any
 
 
 class MLP(nn.Module):
