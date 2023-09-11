@@ -16,18 +16,18 @@ policy:
 
 trainer:
   policy_lr: 1e-3
-  prior_lr: 1e-4
+  prior_lr: 1e-1
   monte_carlo_samples: 256
   epochs: 5000
   batch_size: 256
   max_horizon: 100
+  prior_steps: 1
+  policy_steps: 1
 
 save_every_steps: 100
 keep_every_steps: 1000
 
 seed: 1234
 out_dir: output/runs
-
-fix_prior: true
 
 test_run: False

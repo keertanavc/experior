@@ -77,7 +77,7 @@ class BetaPrior(nn.Module, Prior):
 
         # clip mu to avoid numerical issues
         mu = jnp.clip(mu, eps, 1.0 - eps)
-        return jstats.beta.logpdf(mu, alphas, betas)
+        return jstats.beta.logpdf(mu, alphas, betas).sum(axis=1)
 
     def __call__(self, mu):
         return self.log_prob(mu)
@@ -103,3 +103,21 @@ class BetaPrior(nn.Module, Prior):
         )
 
         return prior_state
+
+
+def prior_optimal_policy(mu_vectors, prior_log_p):
+    """Returns the optimal policy w.r.t. the prior.
+
+    Args:
+        mu_vectors: The mean vectors of the prior, shape (n_samples, num_actions).
+        prior_log_p: The log-probabilities of mu_vectors, shape (n_samples, num_actions).
+    """
+    num_actions = mu_vectors.shape[1]
+
+    # shape: (n_samples, horizon)
+    opt_actions = jax.lax.stop_gradient(
+        jnp.eye(num_actions)[jnp.argmax(mu_vectors, axis=1)]
+    )
+    indp_p = jnp.exp(prior_log_p.sum(axis=1, keepdims=True))  # shape: (n_samples, 1)
+
+    return (opt_actions * indp_p / jax.lax.stop_gradient(indp_p)).mean(axis=1)

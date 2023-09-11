@@ -2,6 +2,7 @@ from random_word import RandomWords
 
 import jax.numpy as jnp
 import jax
+from jax.scipy.special import xlogy
 
 import os
 import yaml
@@ -118,3 +119,14 @@ def get_policy_prior_from_run(
         )
 
     return policy_fn, prior_fn, conf
+
+
+def kl_safe(p, q, eps=1e-6):
+    """Returns the KL divergence between two distributions.
+
+    Args:
+        p: The first distribution.
+        q: The second distribution.
+    """
+    q = (q + eps) / q.shape[-1]
+    return (xlogy(p, p) - xlogy(p, q)).sum(axis=-1)

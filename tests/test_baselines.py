@@ -5,7 +5,7 @@ import os, json
 
 from src.baselines import BernoulliTS
 from src.utils import PRNGSequence
-from src.eval import uniform_bayes_regret
+from src.eval import bayes_regret
 
 from tests import TEST_CONFIG
 
@@ -13,7 +13,7 @@ from tests import TEST_CONFIG
 def test_bernoulli_ts():
     key = PRNGSequence(42)
     policy = BernoulliTS(num_actions=TEST_CONFIG.prior.num_actions)
-    regret = uniform_bayes_regret(
+    regret = bayes_regret(
         next(key),
         policy,
         TEST_CONFIG.prior.num_actions,

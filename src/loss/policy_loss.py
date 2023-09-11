@@ -96,19 +96,28 @@ class Reinforce(PolicyGradEstimator):
         means = mu_vectors[jnp.arange(n_samples)[:, None], actions]
 
         # shape: (n_samples, horizon)
-        rtg = jax.lax.cumsum(means, axis=1, reverse=True)
+        rtg = jax.lax.stop_gradient(jax.lax.cumsum(means, axis=1, reverse=True))
 
         # baseline for variance reduction, shape: (n_samples, horizon)
-        baseline = self.baseline(actions, rewards, mu_vectors)
+        baseline = jax.lax.stop_gradient(self.baseline(actions, rewards, mu_vectors))
 
         i, j = jnp.meshgrid(
             jnp.arange(n_samples), jnp.arange(num_actions), indexing="ij"
         )
-        policy_log = log_probs[i, j, actions]  # shape: (n_samples, horizon)
-        loss = -(jax.lax.stop_gradient(rtg - baseline) * policy_log).sum(axis=1).mean()
-        true_loss_val = -(rtg * policy_log).sum(axis=1).mean()
+        policy_prob = jnp.exp(log_probs[i, j, actions])  # shape: (n_samples, horizon)
 
-        return loss, jax.lax.stop_gradient(true_loss_val)
+        # clip policy_prob
+        # TODO fix this
+        policy_prob = jnp.clip(policy_prob, a_min=1e-6, a_max=1.0)
+
+        loss = (
+            -((rtg - baseline) * policy_prob / jax.lax.stop_gradient(policy_prob))
+            .sum(axis=1)
+            .mean()
+            - baseline.sum(axis=1).mean()
+        )
+
+        return loss
 
 
 class Binforce(PolicyGradEstimator):
@@ -124,33 +133,26 @@ class Binforce(PolicyGradEstimator):
         means = mu_vectors[jnp.arange(n_samples)[:, None], actions]
 
         # shape: (n_samples, horizon)
-        rtg = jax.lax.cumsum(means, axis=1, reverse=True)
+        rtg = jax.lax.stop_gradient(jax.lax.cumsum(means, axis=1, reverse=True))
 
         # baseline for variance reduction, shape: (n_samples, horizon)
-        baseline = self.baseline(actions, rewards, mu_vectors)
+        baseline = jax.lax.stop_gradient(self.baseline(actions, rewards, mu_vectors))
 
         # shape: (n_samples, horizon, num_actions)
         action_rtg = (rtg - means)[:, :, None] + mu_vectors[:, None, :]
-        policy_probs = jax.lax.stop_gradient(jnp.exp(log_probs))
+        policy_probs = jnp.exp(log_probs)
         loss = (
-            -(
-                jax.lax.stop_gradient(action_rtg - baseline[:, :, None])
-                * log_probs
-                * policy_probs
-            )
+            -((action_rtg - baseline[:, :, None]) * policy_probs)
             .sum(axis=2)
             .sum(axis=1)
             .mean()
+            - baseline.sum(axis=1).mean()
         )
 
-        true_loss_val = (
-            -(action_rtg * log_probs * policy_probs).sum(axis=2).sum(axis=1).mean()
-        )
-
-        return loss, jax.lax.stop_gradient(true_loss_val)
+        return loss
 
 
-def get_policy_grad_estimator(conf: ExperiorConfig) -> PolicyGradEstimator:
+def get_policy_loss(conf: ExperiorConfig) -> PolicyGradEstimator:
     if conf.trainer.policy_grad.name == "reinforce":
         return Reinforce(conf)
     elif conf.trainer.policy_grad.name == "binforce":

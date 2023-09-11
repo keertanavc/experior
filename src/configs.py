@@ -25,10 +25,10 @@ class SoftElimPolicyConfig(BaseModel):
 class WandbConfig(BaseModel):
     project: str
     entity: Optional[str]
-    log_every_steps: int
     run_name: Optional[str]
     run_id: Optional[str]
     resume: bool = False
+    # TODO handle log every steps for different time scales
 
 
 class BetaPriorConfig(BaseModel):
@@ -66,13 +66,14 @@ class TrainerConfig(BaseModel):
     batch_size: int
     max_horizon: int
     policy_grad: PolicyGradEstimatorConfig
+    policy_steps: int = 1
+    prior_steps: int = 1  # zero means fixed prior
 
 
 class ExperiorConfig(BaseModel):
     policy: Union[TransformerPolicyConfig, SoftElimPolicyConfig]
     prior: BetaPriorConfig
     trainer: TrainerConfig
-    fix_prior: bool
     seed: int
     test_run: bool
     wandb: WandbConfig

@@ -10,11 +10,13 @@ from src.configs import ExperiorConfig
 from pprint import pprint
 
 from jax import config
+
 config.update("jax_debug_nans", True)
 
 # Add resolver for hydra
 OmegaConf.register_new_resolver("eval", eval)
 # TODO add baseline
+
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(conf: ExperiorConfig):
@@ -22,9 +24,6 @@ def main(conf: ExperiorConfig):
 
     if conf.test_run:
         pprint(conf.dict())
-        # conf.trainer.epochs = 100
-        # conf.trainer.monte_carlo_samples = 64
-        # conf.trainer.batch_size = 16
     else:
         conf = init_run_dir(conf)
         wandb.init(
@@ -38,6 +37,11 @@ def main(conf: ExperiorConfig):
             # compatible with hydra
             settings=wandb.Settings(start_method="thread"),
         )
+        wandb.define_metric("prior/step")
+        wandb.define_metric("policy/step")
+        wandb.define_metric("prior/*", step_metric="prior/step")
+        wandb.define_metric("policy/*", step_metric="policy/step")
+        wandb.define_metric("epoch", step_metric="prior/step")
 
     rng = PRNGSequence(conf.seed)
 
