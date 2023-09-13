@@ -3,7 +3,7 @@ import wandb
 
 from omegaconf import OmegaConf
 
-from src.trainer import BayesRegretTrainer
+from src.trainers import MiniMaxTrainer, MaxEntTrainer
 from src.utils import PRNGSequence, init_run_dir
 from src.configs import ExperiorConfig
 
@@ -15,12 +15,12 @@ config.update("jax_debug_nans", True)
 
 # Add resolver for hydra
 OmegaConf.register_new_resolver("eval", eval)
-# TODO add baseline
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(conf: ExperiorConfig):
-    conf = ExperiorConfig(**OmegaConf.to_object(conf))
+    conf = hydra.utils.instantiate(conf)
+    conf = ExperiorConfig(**OmegaConf.to_container(conf))
 
     if conf.test_run:
         pprint(conf.dict())
@@ -41,11 +41,13 @@ def main(conf: ExperiorConfig):
         wandb.define_metric("policy/step")
         wandb.define_metric("prior/*", step_metric="prior/step")
         wandb.define_metric("policy/*", step_metric="policy/step")
-        wandb.define_metric("epoch", step_metric="prior/step")
 
     rng = PRNGSequence(conf.seed)
+    if conf.trainer.name == "minimax":
+        trainer = MiniMaxTrainer(conf)
+    elif conf.trainer.name == "MaxEnt":
+        trainer = MaxEntTrainer(conf)
 
-    trainer = BayesRegretTrainer(conf)
     trainer.initialize(next(rng))
     trainer.train(next(rng))
 

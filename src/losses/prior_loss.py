@@ -2,10 +2,10 @@ import jax.numpy as jnp
 import jax
 
 
-def prior_loss(actions, mu_vectors, prior_log_p):
-    """
+def prior_max_loss(actions, mu_vectors, prior_log_p):
+    """The loss function for minimax training of the prior.
     Args:
-        actions: The history of actions, shape (n_samples, T).
+        actions: The history of actions taken by the policy, shape (n_samples, T).
         mu_vectors: The mean vectors of the prior, shape (n_samples, num_actions).
         prior_log_p: The log-probabilities of mu_vectors, shape (n_samples, ).
     """
@@ -23,4 +23,4 @@ def prior_loss(actions, mu_vectors, prior_log_p):
     ).mean()
 
 
-# TODO add baselines for both prior loss and prior optimal policy
+

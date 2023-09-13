@@ -11,7 +11,7 @@ import wandb
 from flax.training import train_state
 
 from src.configs import ExperiorConfig
-from src.trainer import BayesRegretTrainer
+from src.trainers import Trainer
 from src.commons import Params, Variables, Callable
 
 
@@ -90,20 +90,19 @@ def init_run_dir(conf: ExperiorConfig) -> ExperiorConfig:
     return conf
 
 
-# TODO something is wrong with ckpt
+# TODO better document
 def get_policy_prior_from_run(
     run_path, step=None, only_conf=False
-) -> (Callable, Callable, ExperiorConfig):
+) -> (Callable, Callable, Callable, ExperiorConfig):
     with open(os.path.join(run_path, "config.yaml")) as fp:
         conf = ExperiorConfig(**yaml.load(fp, Loader=yaml.Loader))
     if only_conf:
-        return None, conf
+        return None, None, None, conf
 
-    trainer = BayesRegretTrainer(conf)
+    trainer = Trainer(conf)
     rng = PRNGSequence(0)
     trainer.initialize(next(rng))
     ckpt = trainer.load_states(step)
-    # TODO fix this
     policy_state = ckpt["policy_model"]
     prior_state = ckpt["prior_model"]
 
@@ -117,6 +116,9 @@ def get_policy_prior_from_run(
             size=size,
             method="sample",
         )
+
+    if conf.prior.name == "MaxEnt":
+        raise Exception("Fix the MaxEnt density function")  # TODO
 
     return policy_fn, prior_fn, conf
 

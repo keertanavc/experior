@@ -17,8 +17,8 @@ def test_bernoulli_ts():
         next(key),
         policy,
         TEST_CONFIG.prior.num_actions,
-        TEST_CONFIG.trainer.max_horizon,
-        TEST_CONFIG.trainer.monte_carlo_samples,
+        TEST_CONFIG.trainer.test_horizon,
+        TEST_CONFIG.trainer.policy_trainer.mc_samples,
     )
 
     metrics = {"ts_regret": regret.tolist()}

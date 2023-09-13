@@ -8,12 +8,22 @@ from src.models import UniformPrior
 
 
 def bayes_regret(
-    rng_key, policy_fn, num_actions: jnp.array, horizon, n_envs, prior_fn=None
+    rng_key,
+    policy_fn,
+    num_actions: jnp.array,
+    horizon,
+    n_envs,
+    prior_fn=None,
+    density_fn=None,
 ):
     if prior_fn is None:
         prior_fn = UniformPrior(num_actions).sample
+    if density_fn is None:
+        density_fn = lambda x: jnp.ones(x.shape[0])
     rng_key, key = jax.random.split(rng_key)
     mu_vectors = prior_fn(key, n_envs)
+    density = density_fn(mu_vectors).reshape(-1, 1)
+    # TODO normalize the density
 
     rng_key, key = jax.random.split(rng_key)
     actions, _, _ = policy_rollout(policy_fn, key, mu_vectors, horizon)
@@ -28,4 +38,4 @@ def bayes_regret(
     cum_rewards = jax.lax.cumsum(means, axis=1)  # shape: (n_envs, horizon)
 
     cum_regret = cum_max - cum_rewards
-    return cum_regret.mean(axis=0)
+    return (density * cum_regret).mean(axis=0)

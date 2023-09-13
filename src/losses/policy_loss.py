@@ -56,9 +56,9 @@ class OptBaseline(VarBaseline):
 
 
 def get_var_baseline(conf: ExperiorConfig) -> VarBaseline:
-    if conf.trainer.policy_grad.var_baseline == "opt":
+    if conf.trainer.policy_trainer.grad_est.var_baseline == "opt":
         return OptBaseline()
-    elif conf.trainer.policy_grad.var_baseline is None:
+    elif conf.trainer.policy_trainer.grad_est.var_baseline is None:
         return ZeroBaseline()
     else:
         raise NotImplementedError
@@ -71,13 +71,15 @@ class PolicyGradEstimator:
     def __init__(self, conf: ExperiorConfig):
         self.baseline = get_var_baseline(conf)
 
-    def __call__(self, actions, rewards, log_probs, mu_vector):
+    def __call__(self, actions, rewards, log_probs, mu_vector, density=None):
         """
         Args:
             actions: The history of actions, shape (batch_size, T).
             rewards: The history of rewards, shape (batch_size, T).
             log_probs: The log-probabilities of all actions, shape (batch_size, T, num_actions).
             mu_vectors: The mean vectors of the prior, shape (batch_size, num_actions).
+            density: The density corresponding to the mu_vectors,
+              shape (batch_size, ), default 1.
         """
         raise NotImplementedError
 
@@ -86,11 +88,17 @@ class Reinforce(PolicyGradEstimator):
     def __init__(self, conf: ExperiorConfig):
         super().__init__(conf)
 
-    def __call__(self, actions, rewards, log_probs, mu_vectors):
+    def __call__(self, actions, rewards, log_probs, mu_vectors, density=None):
         """Returns the REINFORCE gradient estimator."""
 
         n_samples = actions.shape[0]
         num_actions = actions.shape[1]
+
+        if density is None:
+            density = jnp.ones(n_samples, dtype=jnp.float32)
+        else:
+            assert density.shape == (n_samples,)
+        density = jax.lax.stop_gradient(density).reshape(-1, 1)
 
         # shape: (n_samples, horizon)
         means = mu_vectors[jnp.arange(n_samples)[:, None], actions]
@@ -111,11 +119,11 @@ class Reinforce(PolicyGradEstimator):
         policy_prob = jnp.clip(policy_prob, a_min=1e-6, a_max=1.0)
 
         loss = (
-            -((rtg - baseline) * policy_prob / jax.lax.stop_gradient(policy_prob))
-            .sum(axis=1)
-            .mean()
-            - baseline.sum(axis=1).mean()
-        )
+            density
+            * (baseline - rtg)
+            * policy_prob
+            / jax.lax.stop_gradient(policy_prob)
+        ).sum(axis=1).mean() - baseline.sum(axis=1).mean()
 
         return loss
 
@@ -124,10 +132,15 @@ class Binforce(PolicyGradEstimator):
     def __init__(self, conf: ExperiorConfig):
         super().__init__(conf)
 
-    def __call__(self, actions, rewards, log_probs, mu_vectors):
+    def __call__(self, actions, rewards, log_probs, mu_vectors, density=None):
         """Returns the biased REINFORCE gradient estimator."""
 
         n_samples = actions.shape[0]
+        if density is None:
+            density = jnp.ones(n_samples, dtype=jnp.float32)
+        else:
+            assert density.shape == (n_samples,)
+        density = jax.lax.stop_gradient(density)[..., None, None]
 
         # shape: (n_samples, horizon)
         means = mu_vectors[jnp.arange(n_samples)[:, None], actions]
@@ -141,21 +154,17 @@ class Binforce(PolicyGradEstimator):
         # shape: (n_samples, horizon, num_actions)
         action_rtg = (rtg - means)[:, :, None] + mu_vectors[:, None, :]
         policy_probs = jnp.exp(log_probs)
-        loss = (
-            -((action_rtg - baseline[:, :, None]) * policy_probs)
-            .sum(axis=2)
-            .sum(axis=1)
-            .mean()
-            - baseline.sum(axis=1).mean()
-        )
+        loss = (density * (baseline[:, :, None] - action_rtg) * policy_probs).sum(
+            axis=2
+        ).sum(axis=1).mean() - baseline.sum(axis=1).mean()
 
         return loss
 
 
 def get_policy_loss(conf: ExperiorConfig) -> PolicyGradEstimator:
-    if conf.trainer.policy_grad.name == "reinforce":
+    if conf.trainer.policy_trainer.grad_est.name == "reinforce":
         return Reinforce(conf)
-    elif conf.trainer.policy_grad.name == "binforce":
+    elif conf.trainer.policy_trainer.grad_est.name == "binforce":
         return Binforce(conf)
     else:
         raise NotImplementedError

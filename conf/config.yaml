@@ -1,28 +1,33 @@
 defaults:
-  - trainer: reinforce
+  - trainer: maxent
   - policy: softelim
-  - prior: uniform
+  - prior: maxent
   - hydra: default
   - wandb: default
-  - _self_
   - override hydra/hydra_logging: disabled
   - override hydra/job_logging: disabled
+  - override trainer/policy_trainer: reinforce
+  - override trainer/prior_trainer: default
+  - _self_
 
 prior:
-  num_actions: 5
-
-policy:
-  horizon: 100
+  num_actions: 20
 
 trainer:
-  policy_lr: 1e-3
-  prior_lr: 1e-1
-  monte_carlo_samples: 256
-  epochs: 5000
-  batch_size: 256
-  max_horizon: 100
-  prior_steps: 1
-  policy_steps: 1
+  policy_trainer:
+    lr: 1e-3
+    mc_samples: 256
+    epochs: 5000
+    batch_size: 256
+
+  prior_trainer:
+    lr: 1e-3
+    mc_samples: 512
+    batch_size: 512
+    epochs: 2000
+
+  test_horizon: 100
+  train_horizon: 100
 
 save_every_steps: 100
 keep_every_steps: 1000

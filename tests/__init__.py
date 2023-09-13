@@ -4,28 +4,34 @@ from src.configs import (
     BetaPriorConfig,
     TrainerConfig,
     WandbConfig,
-    PolicyGradEstimatorConfig,
+    GradEstimatorConfig,
+    ModelTrainerConfig,
 )
 import jax.numpy as jnp
 
 TEST_CONFIG = ExperiorConfig(
     policy=TransformerPolicyConfig(
-        horizon=10,
         h_dim=64,
         dtype=jnp.float32,
         num_heads=4,
         drop_p=0.1,
         n_blocks=3,
     ),
-    prior=BetaPriorConfig(num_actions=3, init_alpha=2, init_beta=1),
+    prior=BetaPriorConfig(name="beta", num_actions=3, init_alpha=2, init_beta=1),
     trainer=TrainerConfig(
-        policy_lr=1e-3,
-        prior_lr=1e-3,
-        monte_carlo_samples=10,
-        epochs=10,
-        batch_size=10,
-        max_horizon=10,
-        policy_grad=PolicyGradEstimatorConfig(),
+        name="minimax",
+        policy_trainer=ModelTrainerConfig(
+            lr=1e-3,
+            batch_size=32,
+            epochs=10,
+            mc_samples=32,
+            grad_est=GradEstimatorConfig(name="reinforce"),
+        ),
+        prior_trainer=ModelTrainerConfig(
+            lr=1e-3, batch_size=32, epochs=10, mc_samples=32
+        ),
+        test_horizon=20,
+        train_horizon=10,
     ),
     seed=42,
     test_run=True,

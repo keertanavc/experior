@@ -1,0 +1,5 @@
+defaults:
+  - policy_trainer: reinforce
+  - prior_trainer: default
+  
+name: minimax

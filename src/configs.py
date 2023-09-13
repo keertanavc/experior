@@ -1,15 +1,22 @@
 from pydantic import BaseModel, validator
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, Callable
 
 import jax.numpy as jnp
+from jax.random import uniform, normal
+
+from src.commons import PRNGKey
 
 VAR_BASELINES = ["opt"]
 GRAD_ESTIMATORS = ["reinforce", "binforce"]
+TRAINERS = ["MaxEnt", "minimax"]
+REF_DISTS = [uniform, normal]
+
+
+##################### Policy Configs #####################
 
 
 class TransformerPolicyConfig(BaseModel):
     name: str = "transformer"
-    horizon: int
     n_blocks: int
     h_dim: int
     num_heads: int
@@ -19,27 +26,37 @@ class TransformerPolicyConfig(BaseModel):
 
 class SoftElimPolicyConfig(BaseModel):
     name: str = "softelim"
-    horizon: int
 
 
-class WandbConfig(BaseModel):
-    project: str
-    entity: Optional[str]
-    run_name: Optional[str]
-    run_id: Optional[str]
-    resume: bool = False
-    # TODO handle log every steps for different time scales
+##################### Prior Configs #####################
 
 
 class BetaPriorConfig(BaseModel):
-    name: str = "beta"
+    name: str
     num_actions: int
     init_alpha: Optional[float]
     init_beta: Optional[float]
     epsilon: float = 1e-3
 
 
-class PolicyGradEstimatorConfig(BaseModel):
+class MaxEntPriorConfig(BaseModel):
+    name: str
+    num_actions: int
+    ref_dist: Callable
+
+    # validate ref_dist
+    @validator("ref_dist")
+    def validate_ref_dist(cls, v):
+        if v is not None and v.func not in REF_DISTS:
+            raise ValueError(f"ref dist {v} not found in config")
+
+        return v
+
+
+##################### Other Configs #####################
+
+
+class GradEstimatorConfig(BaseModel):
     name: str = "reinforce"
     var_baseline: Optional[str]
 
@@ -58,21 +75,51 @@ class PolicyGradEstimatorConfig(BaseModel):
         return v
 
 
-class TrainerConfig(BaseModel):
-    policy_lr: float
-    prior_lr: float
-    monte_carlo_samples: int
+class ModelTrainerConfig(BaseModel):
+    lr: float
+    mc_samples: int
     epochs: int
     batch_size: int
-    max_horizon: int
-    policy_grad: PolicyGradEstimatorConfig
-    policy_steps: int = 1
-    prior_steps: int = 1  # zero means fixed prior
+    grad_est: Optional[GradEstimatorConfig]
+    steps: int = 1  # steps per epoch (zero means fixed model - no training)
+
+
+class TrainerConfig(BaseModel):
+    name: str
+    policy_trainer: ModelTrainerConfig
+    prior_trainer: ModelTrainerConfig
+    test_horizon: int
+    train_horizon: int
+
+    @validator("name")
+    def validate_name(cls, v):
+        if v not in TRAINERS:
+            raise ValueError(f"trainer {v} not found in config")
+        return v
+
+    @validator("prior_trainer")
+    def validate_trainer(cls, prior_trainer_val, values, field, config):
+        policy_trainer_val = values["policy_trainer"]
+        if values["name"] == "minimax":
+            assert (
+                prior_trainer_val.epochs == policy_trainer_val.epochs
+            ), "Minimax trainer must have same number of epochs for both policy and prior"
+
+        return prior_trainer_val
+
+
+class WandbConfig(BaseModel):
+    project: str
+    entity: Optional[str]
+    run_name: Optional[str]
+    run_id: Optional[str]
+    resume: bool = False
+    # TODO handle log every steps for different time scales
 
 
 class ExperiorConfig(BaseModel):
     policy: Union[TransformerPolicyConfig, SoftElimPolicyConfig]
-    prior: BetaPriorConfig
+    prior: Union[MaxEntPriorConfig, BetaPriorConfig]
     trainer: TrainerConfig
     seed: int
     test_run: bool
@@ -81,3 +128,12 @@ class ExperiorConfig(BaseModel):
     save_every_steps: int
     keep_every_steps: int
     ckpt_dir: Optional[str]
+
+    # validate trainer
+    @validator("trainer")
+    def validate_trainer(cls, trainer_val, values, field, config):
+        prior = values["prior"]
+        if trainer_val.name == "MaxEnt":
+            assert prior.name == "MaxEnt", "MaxEnt trainer must have MaxEnt prior"
+
+        return trainer_val

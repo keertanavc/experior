@@ -121,7 +121,6 @@ class TransformerPolicy(nn.Module, Policy):
     def __call__(self, rng_key, timesteps, actions, rewards):
         """Returns the log-probability distribution over actions for a given history of steps.
         # TODO add masking the inputs with timestep 0
-        # TODO test_horizon instead of max horizon
         Args:
             rng_key: A JAX random key.
             timesteps: The history of timesteps, shape (batch_size, T).
@@ -130,11 +129,15 @@ class TransformerPolicy(nn.Module, Policy):
 
         """
         B, T = timesteps.shape
+
         # TODO check if the maximum value of timesteps is less than the max_horizon
+        max_horizon = max(
+            self.config.trainer.test_horizon, self.config.trainer.train_horizon
+        )
 
         # shape: (B, T, h_dim)
         time_embedding = nn.Embed(
-            num_embeddings=self.config.trainer.max_horizon + 1,
+            num_embeddings=max_horizon + 1,
             features=self.config.policy.h_dim,
             dtype=self.config.policy.dtype,
         )(timesteps)

@@ -1,0 +1,4 @@
+name: "MaxEnt"
+ref_dist:
+  _target_: jax.random.uniform
+  _partial_: true

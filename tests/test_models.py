@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from src.models import get_policy, get_prior
 from src.rollout import policy_rollout
 from src.utils import PRNGSequence
-
+from src.configs import ExperiorConfig
 
 from tests import TEST_CONFIG
 
@@ -18,8 +18,8 @@ from copy import deepcopy
 
 def test_transformer_policy():
     # Creating test data
-    batch_size = TEST_CONFIG.trainer.batch_size
-    T = TEST_CONFIG.trainer.max_horizon
+    batch_size = TEST_CONFIG.trainer.policy_trainer.batch_size
+    T = TEST_CONFIG.trainer.test_horizon
     num_actions = TEST_CONFIG.prior.num_actions
 
     rng = PRNGSequence(0)
@@ -44,12 +44,12 @@ def test_transformer_policy():
 
 def test_softelim_policy():
     conf = deepcopy(TEST_CONFIG)
-    conf.trainer.batch_size = 2
-    conf.trainer.max_horizon = 5
+    conf.trainer.policy_trainer.batch_size = 2
+    conf.trainer.test_horizon = 5
     conf.prior.num_actions = 2
-    conf.policy.horizon = 5
+    conf.trainer.train_horizon = 5
     conf.policy.name = "softelim"
-    conf.trainer.monte_carlo_samples = 2
+    conf.trainer.policy_trainer.mc_samples = 2
 
     rng = PRNGSequence(0)
     timesteps = jnp.array([[0, 1, 2, 3, 4, 0], [0, 1, 2, 3, 4, 5]])
@@ -81,10 +81,10 @@ def test_softelim_policy_rollout():
     return _test_policy_rollout(conf)
 
 
-def _test_policy_rollout(conf):
+def _test_policy_rollout(conf: ExperiorConfig):
     rng = PRNGSequence(0)
     num_actions = conf.prior.num_actions
-    n_sample = conf.trainer.monte_carlo_samples
+    n_sample = conf.trainer.policy_trainer.mc_samples
 
     prior_cls = get_prior(conf)
 
@@ -109,14 +109,15 @@ def _test_policy_rollout(conf):
             {"params": policy_state.params}, key, timesteps, actions, rewards
         )
 
+    horizon = conf.trainer.train_horizon
     actions, rewards, log_policy_probs = policy_rollout(
-        policy_fn, next(rng), mu_vectors, conf.policy.horizon
+        policy_fn, next(rng), mu_vectors, horizon
     )
 
     assert (
-        actions.shape == (n_sample, conf.policy.horizon)
-        and rewards.shape == (n_sample, conf.policy.horizon)
-        and log_policy_probs.shape == (n_sample, conf.policy.horizon, num_actions)
+        actions.shape == (n_sample, horizon)
+        and rewards.shape == (n_sample, horizon)
+        and log_policy_probs.shape == (n_sample, horizon, num_actions)
     )
 
     assert jnp.all(jnp.in1d(actions, jnp.arange(num_actions)))
