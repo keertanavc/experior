@@ -1,5 +1,5 @@
 from pydantic import BaseModel, validator
-from typing import Any, Optional, Union, Callable
+from typing import Any, Optional, Union, Callable, List
 
 import jax.numpy as jnp
 from jax.random import uniform, normal
@@ -8,39 +8,43 @@ from src.commons import PRNGKey
 
 VAR_BASELINES = ["opt"]
 GRAD_ESTIMATORS = ["reinforce", "binforce"]
-TRAINERS = ["MaxEnt", "minimax"]
+TRAINERS = ["MaxEnt", "minimax", "mle"]
 REF_DISTS = [uniform, normal]
-
-
-##################### Policy Configs #####################
-
-
-class TransformerPolicyConfig(BaseModel):
-    name: str = "transformer"
-    n_blocks: int
-    h_dim: int
-    num_heads: int
-    drop_p: float = 0.0
-    dtype: Any = jnp.float32
-
-
-class SoftElimPolicyConfig(BaseModel):
-    name: str = "softelim"
 
 
 ##################### Prior Configs #####################
 
 
 class BetaPriorConfig(BaseModel):
-    name: str
+    name: str = "beta"
     num_actions: int
-    init_alpha: Optional[float]
-    init_beta: Optional[float]
+    init_alpha: Optional[Union[float, List[float]]]
+    init_beta: Optional[Union[float, List[float]]]
     epsilon: float = 1e-3
+
+    @validator("init_alpha")
+    def validate_init_alpha(cls, v, values, field, config):
+        if v is not None:
+            if isinstance(v, float):
+                v = [v] * values["num_actions"]
+            assert (
+                len(v) == values["num_actions"]
+            ), "init_alpha must be a list of length num_actions"
+        return v
+
+    @validator("init_beta")
+    def validate_init_beta(cls, v, values, field, config):
+        if v is not None:
+            if isinstance(v, float):
+                v = [v] * values["num_actions"]
+            assert (
+                len(v) == values["num_actions"]
+            ), "init_beta must be a list of length num_actions"
+        return v
 
 
 class MaxEntPriorConfig(BaseModel):
-    name: str
+    name: str = "MaxEnt"
     num_actions: int
     ref_dist: Callable
 
@@ -53,11 +57,45 @@ class MaxEntPriorConfig(BaseModel):
         return v
 
 
-##################### Other Configs #####################
+##################### Policy Configs #####################
+
+
+class TransformerPolicyConfig(BaseModel):
+    name: str = "transformer"
+    num_actions: Optional[int]
+    horizon: Optional[int]
+    n_blocks: int
+    h_dim: int
+    num_heads: int
+    drop_p: float = 0.0
+    dtype: Any = jnp.float32
+
+
+class SoftElimPolicyConfig(BaseModel):
+    name: str = "softelim"
+    num_actions: Optional[int]
+
+
+class BetaTSPolicyConfig(BaseModel):
+    name: str = "beta_ts"
+    num_actions: Optional[int]
+    prior: BetaPriorConfig
+
+
+##################### Expert Configs #####################
+
+
+class SyntheticExpertConfig(BaseModel):
+    name: str = "synthetic"
+    prior: BetaPriorConfig
+    mc_samples: int = 1000  # number of samples from the prior to estimate the policy
+
+
+##################### Trainer Configs #####################
 
 
 class GradEstimatorConfig(BaseModel):
-    name: str = "reinforce"
+    name: str
     var_baseline: Optional[str]
 
     # validate baseline
@@ -108,6 +146,9 @@ class TrainerConfig(BaseModel):
         return prior_trainer_val
 
 
+##################### Other Configs #####################
+
+
 class WandbConfig(BaseModel):
     project: str
     entity: Optional[str]
@@ -118,9 +159,10 @@ class WandbConfig(BaseModel):
 
 
 class ExperiorConfig(BaseModel):
-    policy: Union[TransformerPolicyConfig, SoftElimPolicyConfig]
     prior: Union[MaxEntPriorConfig, BetaPriorConfig]
     trainer: TrainerConfig
+    policy: Union[TransformerPolicyConfig, BetaTSPolicyConfig, SoftElimPolicyConfig]
+    expert: SyntheticExpertConfig
     seed: int
     test_run: bool
     wandb: WandbConfig
@@ -137,3 +179,40 @@ class ExperiorConfig(BaseModel):
             assert prior.name == "MaxEnt", "MaxEnt trainer must have MaxEnt prior"
 
         return trainer_val
+
+    # validate policy
+    @validator("policy")
+    def validate_policy(cls, policy_val, values, field, config):
+        prior = values["prior"]
+        trainer = values["trainer"]
+        if policy_val.name == "transformer":
+            max_horizon = max(trainer.test_horizon, trainer.train_horizon)
+            if policy_val.horizon:
+                assert (
+                    policy_val.horizon >= max_horizon
+                ), "transformer policy horizon must be greater than train/test horizon"
+            else:
+                policy_val.horizon = max_horizon
+
+        if policy_val.num_actions:
+            assert (
+                policy_val.num_actions == prior.num_actions
+            ), "policy and prior must have same number of actions"
+        else:
+            policy_val.num_actions = prior.num_actions
+
+        if trainer.name == "mle":
+            assert policy_val.name == "beta_ts", "MLE trainer must have beta_ts policy"
+
+        return policy_val
+
+    # validate expert
+    @validator("expert")
+    def validate_expert(cls, expert_val, values, field, config):
+        prior = values["prior"]
+        if expert_val.name == "synthetic":
+            assert (
+                expert_val.prior.num_actions == prior.num_actions
+            ), "expert and prior must have same number of actions"
+
+        return expert_val

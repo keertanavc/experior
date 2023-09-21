@@ -23,4 +23,18 @@ def prior_max_loss(actions, mu_vectors, prior_log_p):
     ).mean()
 
 
+def prior_mle_loss(mu_vectors, prior_log_p, density=None):
+    """The loss function for MLE training of the prior.
+    Args:
+        mu_vectors: The mean vectors of the prior, shape (n_samples, num_actions).
+        prior_log_p: The log-probabilities of mu_vectors, shape (n_samples, ).
+        density: The density corresponding to the mu_vectors,
+          shape (n_samples, ), default 1.
+    """
+    n_samples = mu_vectors.shape[0]
+    if density is None:
+        density = jnp.ones(n_samples, dtype=jnp.float32)
+    else:
+        assert density.shape == (n_samples,)
 
+    return -(jnp.dot(density, prior_log_p) / density.sum())

@@ -7,29 +7,42 @@ import jax.numpy as jnp
 from src.models import get_policy, get_prior
 from src.rollout import policy_rollout
 from src.utils import PRNGSequence
-from src.configs import ExperiorConfig
+from src.configs import ExperiorConfig, BetaTSPolicyConfig
 
 from tests import TEST_CONFIG
 
 from copy import deepcopy
 
 # TODO best way to write test for jax?
+# TODO add test config similar to train
 
 
 def test_transformer_policy():
+    return _test_policy(TEST_CONFIG)
+
+
+def test_beta_ts_policy():
+    conf = deepcopy(TEST_CONFIG)
+    conf.policy = BetaTSPolicyConfig(
+        prior=conf.prior, num_actions=conf.prior.num_actions
+    )
+    return _test_policy(conf)
+
+
+def _test_policy(conf: ExperiorConfig):
     # Creating test data
-    batch_size = TEST_CONFIG.trainer.policy_trainer.batch_size
-    T = TEST_CONFIG.trainer.test_horizon
-    num_actions = TEST_CONFIG.prior.num_actions
+    batch_size = conf.trainer.policy_trainer.batch_size
+    T = conf.trainer.test_horizon
+    num_actions = conf.prior.num_actions
 
     rng = PRNGSequence(0)
     timesteps = jnp.arange(batch_size * T).reshape(batch_size, T) % T
     actions = jax.random.randint(next(rng), (batch_size, T), 0, num_actions)
-    rewards = jax.random.normal(next(rng), (batch_size, T))
+    rewards = jax.random.bernoulli(next(rng), p=0.5, shape=(batch_size, T))
 
     # Initialize and call the policy
-    policy_state = get_policy(TEST_CONFIG).create_state(
-        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=TEST_CONFIG
+    policy_state = get_policy(conf.policy.name).create_state(
+        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=conf.policy
     )
 
     action_log_probs = policy_state.apply_fn(
@@ -47,7 +60,9 @@ def test_softelim_policy():
     conf.trainer.policy_trainer.batch_size = 2
     conf.trainer.test_horizon = 5
     conf.prior.num_actions = 2
+    conf.policy.num_actions = 2
     conf.trainer.train_horizon = 5
+    conf.policy.horizon = 5
     conf.policy.name = "softelim"
     conf.trainer.policy_trainer.mc_samples = 2
 
@@ -57,8 +72,8 @@ def test_softelim_policy():
     rewards = jnp.array([[1, 0, 1, 0, 1, 1], [0, 1, 1, 0, 0, 0]])
 
     # Initialize and call the policy
-    policy_state = get_policy(conf).create_state(
-        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=conf
+    policy_state = get_policy(conf.policy.name).create_state(
+        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=conf.policy
     )
 
     action_log_probs = policy_state.apply_fn(
@@ -86,10 +101,10 @@ def _test_policy_rollout(conf: ExperiorConfig):
     num_actions = conf.prior.num_actions
     n_sample = conf.trainer.policy_trainer.mc_samples
 
-    prior_cls = get_prior(conf)
+    prior_cls = get_prior(conf.prior.name)
 
     prior_state = prior_cls.create_state(
-        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=conf
+        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=conf.prior
     )
 
     mu_vectors = prior_state.apply_fn(
@@ -100,8 +115,8 @@ def _test_policy_rollout(conf: ExperiorConfig):
     )
 
     mu_vectors = jax.lax.stop_gradient(mu_vectors)
-    policy_state = get_policy(conf).create_state(
-        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=conf
+    policy_state = get_policy(conf.policy.name).create_state(
+        next(rng), optimizer=optax.adam(learning_rate=1e-2), conf=conf.policy
     )
 
     def policy_fn(key, timesteps, actions, rewards):
@@ -169,7 +184,9 @@ def test_prior():
     )
 
     tx = optax.adam(learning_rate=1e-2)
-    state = get_prior(TEST_CONFIG).create_state(next(rng), tx, conf=TEST_CONFIG)
+    state = get_prior(TEST_CONFIG.prior.name).create_state(
+        next(rng), tx, conf=TEST_CONFIG.prior
+    )
 
     @jax.jit
     def update_step(state, batch):
@@ -200,9 +217,9 @@ def test_prior_sample():
     num_actions = TEST_CONFIG.prior.num_actions
     rng = PRNGSequence(123)
 
-    prior_cls = get_prior(TEST_CONFIG)
+    prior_cls = get_prior(TEST_CONFIG.prior.name)
     state = prior_cls.create_state(
-        next(rng), optax.adam(learning_rate=1e-2), conf=TEST_CONFIG
+        next(rng), optax.adam(learning_rate=1e-2), conf=TEST_CONFIG.prior
     )
 
     samples = state.apply_fn(

@@ -6,6 +6,7 @@ from src.configs import (
     WandbConfig,
     GradEstimatorConfig,
     ModelTrainerConfig,
+    SyntheticExpertConfig
 )
 import jax.numpy as jnp
 
@@ -17,6 +18,7 @@ TEST_CONFIG = ExperiorConfig(
         drop_p=0.1,
         n_blocks=3,
     ),
+    expert=SyntheticExpertConfig(prior=BetaPriorConfig(name="beta", num_actions=3, init_alpha=2, init_beta=1)),
     prior=BetaPriorConfig(name="beta", num_actions=3, init_alpha=2, init_beta=1),
     trainer=TrainerConfig(
         name="minimax",

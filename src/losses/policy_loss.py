@@ -2,7 +2,7 @@ import jax
 
 import jax.numpy as jnp
 
-from src.configs import ExperiorConfig
+from src.configs import GradEstimatorConfig
 from abc import ABC, abstractmethod
 
 
@@ -55,10 +55,10 @@ class OptBaseline(VarBaseline):
         return jax.lax.cumsum(max_means.repeat(T, axis=1), axis=1, reverse=True)
 
 
-def get_var_baseline(conf: ExperiorConfig) -> VarBaseline:
-    if conf.trainer.policy_trainer.grad_est.var_baseline == "opt":
+def get_var_baseline(conf: GradEstimatorConfig) -> VarBaseline:
+    if conf.var_baseline == "opt":
         return OptBaseline()
-    elif conf.trainer.policy_trainer.grad_est.var_baseline is None:
+    elif conf.var_baseline is None:
         return ZeroBaseline()
     else:
         raise NotImplementedError
@@ -68,7 +68,7 @@ def get_var_baseline(conf: ExperiorConfig) -> VarBaseline:
 
 
 class PolicyGradEstimator:
-    def __init__(self, conf: ExperiorConfig):
+    def __init__(self, conf: GradEstimatorConfig):
         self.baseline = get_var_baseline(conf)
 
     def __call__(self, actions, rewards, log_probs, mu_vector, density=None):
@@ -85,7 +85,7 @@ class PolicyGradEstimator:
 
 
 class Reinforce(PolicyGradEstimator):
-    def __init__(self, conf: ExperiorConfig):
+    def __init__(self, conf: GradEstimatorConfig):
         super().__init__(conf)
 
     def __call__(self, actions, rewards, log_probs, mu_vectors, density=None):
@@ -99,6 +99,7 @@ class Reinforce(PolicyGradEstimator):
         else:
             assert density.shape == (n_samples,)
         density = jax.lax.stop_gradient(density).reshape(-1, 1)
+        density = density / density.mean()
 
         # shape: (n_samples, horizon)
         means = mu_vectors[jnp.arange(n_samples)[:, None], actions]
@@ -115,7 +116,6 @@ class Reinforce(PolicyGradEstimator):
         policy_prob = jnp.exp(log_probs[i, j, actions])  # shape: (n_samples, horizon)
 
         # clip policy_prob
-        # TODO fix this
         policy_prob = jnp.clip(policy_prob, a_min=1e-6, a_max=1.0)
 
         loss = (
@@ -123,13 +123,13 @@ class Reinforce(PolicyGradEstimator):
             * (baseline - rtg)
             * policy_prob
             / jax.lax.stop_gradient(policy_prob)
-        ).sum(axis=1).mean() - baseline.sum(axis=1).mean()
+        ).sum(axis=1).mean() - (density * baseline).sum(axis=1).mean()
 
         return loss
 
 
 class Binforce(PolicyGradEstimator):
-    def __init__(self, conf: ExperiorConfig):
+    def __init__(self, conf: GradEstimatorConfig):
         super().__init__(conf)
 
     def __call__(self, actions, rewards, log_probs, mu_vectors, density=None):
@@ -156,15 +156,15 @@ class Binforce(PolicyGradEstimator):
         policy_probs = jnp.exp(log_probs)
         loss = (density * (baseline[:, :, None] - action_rtg) * policy_probs).sum(
             axis=2
-        ).sum(axis=1).mean() - baseline.sum(axis=1).mean()
+        ).sum(axis=1).mean() - (density.reshape(-1, 1) * baseline).sum(axis=1).mean()
 
         return loss
 
 
-def get_policy_loss(conf: ExperiorConfig) -> PolicyGradEstimator:
-    if conf.trainer.policy_trainer.grad_est.name == "reinforce":
+def get_policy_loss(conf: GradEstimatorConfig) -> PolicyGradEstimator:
+    if conf.name == "reinforce":
         return Reinforce(conf)
-    elif conf.trainer.policy_trainer.grad_est.name == "binforce":
+    elif conf.name == "binforce":
         return Binforce(conf)
     else:
         raise NotImplementedError

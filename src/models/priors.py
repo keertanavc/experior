@@ -4,21 +4,19 @@ import flax.linen as nn
 import jax.numpy as jnp
 import jax.scipy.stats as jstats
 
-from flax.training import train_state
 
-from src.configs import ExperiorConfig
-from src.commons import Array
+from src.configs import MaxEntPriorConfig, BetaPriorConfig
+from src.commons import Array, TrainState
 
 from abc import ABC, abstractmethod
-from typing import Callable
 
 ##################### Priors #####################
 
 
-def get_prior(conf: ExperiorConfig):
-    if conf.prior.name == "beta":
+def get_prior(name: str):
+    if name == "beta":
         return BetaPrior
-    elif conf.prior.name == "MaxEnt":
+    elif name == "MaxEnt":
         return MaxEntPrior
     else:
         raise NotImplementedError
@@ -44,15 +42,15 @@ class UniformPrior(Prior):
 class MaxEntPrior(nn.Module, Prior):
     """A maximum entropy prior distribution over arm rewards for a Bernoulli bandit."""
 
-    config: ExperiorConfig
+    config: MaxEntPriorConfig
     expert_policy: Array  # expert distribution, shape: (num_actions,)
 
     def setup(self):
-        self.ref_dist = self.config.prior.ref_dist
+        self.ref_dist = self.config.ref_dist
         self.lambdas = self.param(
             "lambdas",
             nn.initializers.lecun_normal(),
-            (self.config.prior.num_actions, 1),
+            (self.config.num_actions, 1),
         )
 
     def unnormalized_prob(self, mu):
@@ -65,9 +63,9 @@ class MaxEntPrior(nn.Module, Prior):
             The unnormalized probability of each mean vector, shape (batch_size,).
         """
         # shape: (batch_size, num_actions)
-        best_act = jnp.eye(self.config.prior.num_actions)[jnp.argmax(mu, axis=1)]
+        best_act = jnp.eye(self.config.num_actions)[jnp.argmax(mu, axis=1)]
         I_max = best_act - jnp.array(self.expert_policy).reshape(
-            1, self.config.prior.num_actions
+            1, self.config.num_actions
         )
         return jnp.exp(-I_max @ self.lambdas).reshape(
             -1,
@@ -78,17 +76,29 @@ class MaxEntPrior(nn.Module, Prior):
 
     def sample(self, rng_key, size):
         """Returns a sample from the reference distribution."""
-        return self.ref_dist(rng_key, (size, self.config.prior.num_actions))
+        return self.ref_dist(rng_key, (size, self.config.num_actions))
+
+    def optimal_policy(self, rng_key, size=1000):
+        mu_vectors = self.sample(rng_key, size)
+
+        # shape: (n_samples, 1)
+        density = self.unnormalized_prob(mu_vectors).reshape(-1, 1)
+        density = density / density.mean()
+
+        # shape: (n_samples, num_actions)
+        opt_actions = jnp.eye(self.config.num_actions)[jnp.argmax(mu_vectors, axis=1)]
+
+        return (density * opt_actions).mean(axis=0)
 
     @classmethod
     def create_state(
-        cls, rng_key, optimizer, conf: ExperiorConfig, expert_policy: Array
-    ) -> train_state.TrainState:
+        cls, rng_key, optimizer, conf: MaxEntPriorConfig, expert_policy: Array
+    ) -> TrainState:
         """Returns an initial state for the prior."""
         prior_model = cls(config=conf, expert_policy=expert_policy)
-        variables = prior_model.init(rng_key, jnp.ones((1, conf.prior.num_actions)))
+        variables = prior_model.init(rng_key, jnp.ones((1, conf.num_actions)))
 
-        prior_state = train_state.TrainState.create(
+        prior_state = TrainState.create(
             apply_fn=prior_model.apply, params=variables["params"], tx=optimizer
         )
 
@@ -98,39 +108,37 @@ class MaxEntPrior(nn.Module, Prior):
 class BetaPrior(nn.Module, Prior):
     """A beta prior distribution over arm rewards for a Bernoulli bandit."""
 
-    config: ExperiorConfig
+    config: BetaPriorConfig
 
     def setup(self):
-        if self.config.prior.init_alpha is None:
+        if self.config.init_alpha is None:
 
             def alpha_init_fn(rng, shape):
-                return 5.0 * jax.random.uniform(rng) * jnp.ones(shape)
+                return 5.0 * jax.random.uniform(rng, shape)
 
         else:
 
             def alpha_init_fn(rng, shape):
-                return self.config.prior.init_alpha * jnp.ones(shape)
+                return jnp.array(self.config.init_alpha) * jnp.ones(shape)
 
-        if self.config.prior.init_beta is None:
+        if self.config.init_beta is None:
 
             def beta_init_fn(rng, shape):
-                return 5.0 * jax.random.uniform(rng) * jnp.ones(shape)
+                return 5.0 * jax.random.uniform(rng, shape)
 
         else:
 
             def beta_init_fn(rng, shape):
-                return self.config.prior.init_beta * jnp.ones(shape)
+                return jnp.array(self.config.init_beta) * jnp.ones(shape)
 
         self.alphas_sq = self.param(
-            "alphas_sq", alpha_init_fn, (self.config.prior.num_actions,)
+            "alphas_sq", alpha_init_fn, (self.config.num_actions,)
         )
-        self.betas_sq = self.param(
-            "betas_sq", beta_init_fn, (self.config.prior.num_actions,)
-        )
+        self.betas_sq = self.param("betas_sq", beta_init_fn, (self.config.num_actions,))
 
     def log_prob(self, mu):
         """Returns the log probability of a given mean vector."""
-        eps = self.config.prior.epsilon
+        eps = self.config.epsilon
         alphas = jnp.power(self.alphas_sq, 2) + eps
         betas = jnp.power(self.betas_sq, 2) + eps
 
@@ -143,21 +151,19 @@ class BetaPrior(nn.Module, Prior):
 
     def sample(self, rng_key, size):
         """Returns a sample from the prior."""
-        alphas = self.alphas_sq**2 + self.config.prior.epsilon
-        betas = self.betas_sq**2 + self.config.prior.epsilon
+        alphas = self.alphas_sq**2 + self.config.epsilon
+        betas = self.betas_sq**2 + self.config.epsilon
         return jax.random.beta(
-            rng_key, a=alphas, b=betas, shape=(size, self.config.prior.num_actions)
+            rng_key, a=alphas, b=betas, shape=(size, self.config.num_actions)
         )
 
     @classmethod
-    def create_state(
-        cls, rng_key, optimizer, conf: ExperiorConfig
-    ) -> train_state.TrainState:
+    def create_state(cls, rng_key, optimizer, conf: BetaPriorConfig) -> TrainState:
         """Returns an initial state for the prior."""
         prior_model = cls(config=conf)
-        variables = prior_model.init(rng_key, jnp.ones((1, conf.prior.num_actions)))
+        variables = prior_model.init(rng_key, jnp.ones((1, conf.num_actions)))
 
-        prior_state = train_state.TrainState.create(
+        prior_state = TrainState.create(
             apply_fn=prior_model.apply, params=variables["params"], tx=optimizer
         )
 

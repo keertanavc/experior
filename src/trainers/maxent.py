@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from tqdm import tqdm
 
 from src.configs import ExperiorConfig
+from src.experts import Expert
 from src.losses import get_policy_loss
 from src.rollout import policy_rollout
 from src.models import get_policy, get_prior
@@ -14,27 +15,24 @@ from .trainer import Trainer
 
 
 class MaxEntTrainer(Trainer):
-    def __init__(self, conf: ExperiorConfig):
-        super().__init__(conf)
+    def __init__(self, conf: ExperiorConfig, expert: Expert):
+        super().__init__(conf, expert)
 
     def initialize(self, rng: PRNGKey):
-        policy_key, prior_key = jax.random.split(rng)
+        policy_key, prior_key1, prior_key2 = jax.random.split(rng, 3)
 
-        # TODO read the expert policy here
-        self.expert_policy = (
-            jnp.ones((self.conf.prior.num_actions,)) / self.conf.prior.num_actions
-        )
+        expert_policy = self.expert.policy(prior_key2)
 
         prior_opt = optax.adamw(learning_rate=self.conf.trainer.prior_trainer.lr)
-        self.prior_state = get_prior(self.conf).create_state(
-            prior_key, prior_opt, self.conf, self.expert_policy
+        self.prior_state = get_prior(self.conf.prior.name).create_state(
+            prior_key1, prior_opt, self.conf.prior, expert_policy
         )
 
         policy_opt = optax.adamw(learning_rate=self.conf.trainer.policy_trainer.lr)
-        self.policy_state = get_policy(self.conf).create_state(
-            policy_key, policy_opt, self.conf
+        self.policy_state = get_policy(self.conf.policy.name).create_state(
+            policy_key, policy_opt, self.conf.policy
         )
-        policy_loss = get_policy_loss(self.conf)
+        policy_loss = get_policy_loss(self.conf.trainer.policy_trainer.grad_est)
 
         @jax.jit
         def _prior_step(key, policy_state, prior_state, batch):
@@ -72,6 +70,8 @@ class MaxEntTrainer(Trainer):
                 out["loss"] = loss
                 out["reward"] = r.mean()
                 out["log_probs"] = policy_log_p.mean()
+                if self.conf.policy.name == "softelim":
+                    out["w"] = policy_params["w"]
 
                 return loss, out
 

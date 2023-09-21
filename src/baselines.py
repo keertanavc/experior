@@ -2,9 +2,6 @@ import jax
 import jax.numpy as jnp
 
 from src.models import Policy
-from src.configs import ExperiorConfig
-
-from typing import Dict
 
 ## NOTE: The models can get time_steps = 0, they should ignore those
 
@@ -16,7 +13,6 @@ class BernoulliTS(Policy):
 
     def __call__(self, rng_key, time_steps, actions, rewards):
         max_t = time_steps.max(axis=1).reshape(-1, 1)  # shape: (batch_size, 1)
-        b_size = time_steps.shape[0]
         num_actions = self.num_actions
 
         # shape: (batch_size, T)
@@ -46,7 +42,3 @@ class BernoulliTS(Policy):
 
     def __str__(self):
         return "BernoulliTS"
-
-
-def get_baselines(conf: ExperiorConfig) -> Dict[str, Policy]:
-    return {"BernoulliTS": BernoulliTS(conf.prior.num_actions)}

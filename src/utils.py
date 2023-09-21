@@ -1,18 +1,16 @@
-from random_word import RandomWords
-
-import jax.numpy as jnp
 import jax
-from jax.scipy.special import xlogy
-
+import jax.numpy as jnp
 import os
 import yaml
 import wandb
 
-from flax.training import train_state
+from jax.scipy.special import xlogy
+from random_word import RandomWords
+
 
 from src.configs import ExperiorConfig
 from src.trainers import Trainer
-from src.commons import Params, Variables, Callable
+from src.commons import Callable
 
 
 # adapted from https://github.com/unstable-zeros/tasil
@@ -33,21 +31,6 @@ class PRNGSequence:
         k, n = jax.random.split(self._key)
         self._key = k
         return n
-
-
-class TrainState(train_state.TrainState):
-    stats: Variables
-    init_stats: Variables
-    init_params: Params
-
-    def init_opt_state(
-        self,
-    ):  # Initializes the optimizer state. TODO make sure it's correct
-        new_opt_state = self.tx.init(self.params)
-        return self.replace(opt_state=new_opt_state)
-
-    def init_param_state(self):
-        return self.replace(stats=self.init_stats, params=self.init_params)
 
 
 def init_run_dir(conf: ExperiorConfig) -> ExperiorConfig:

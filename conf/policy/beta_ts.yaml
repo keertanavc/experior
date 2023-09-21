@@ -1,0 +1,5 @@
+name: beta_ts
+prior:
+  num_actions: ${prior.num_actions}
+  init_alpha: null
+  init_beta: null

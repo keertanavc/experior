@@ -5,6 +5,7 @@ from src.rollout import policy_rollout
 from src.models import UniformPrior
 
 # TODO better document
+# TODO fix density for MaxEntropy Prior
 
 
 def bayes_regret(
@@ -18,12 +19,14 @@ def bayes_regret(
 ):
     if prior_fn is None:
         prior_fn = UniformPrior(num_actions).sample
+
     if density_fn is None:
         density_fn = lambda x: jnp.ones(x.shape[0])
+
     rng_key, key = jax.random.split(rng_key)
     mu_vectors = prior_fn(key, n_envs)
     density = density_fn(mu_vectors).reshape(-1, 1)
-    # TODO normalize the density
+    density = density / density.mean()
 
     rng_key, key = jax.random.split(rng_key)
     actions, _, _ = policy_rollout(policy_fn, key, mu_vectors, horizon)

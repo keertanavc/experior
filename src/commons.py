@@ -1,8 +1,10 @@
-import flax.linen as nn
+import optax
 
+import flax.linen as nn
 import jax.numpy as jnp
 
 from typing import Callable, Sequence, Any, Tuple
+from flax.training import train_state
 
 PRNGKey = Any
 Params = Any
@@ -63,3 +65,47 @@ class TransformerBlock(nn.Module):
         )(x)
         x = nn.LayerNorm(dtype=self.dtype)(x)
         return x
+
+
+class TrainState(train_state.TrainState):
+    def apply_gradients(self, *, grads, **kwargs):
+        """Updates `step`, `params`, `opt_state` and `**kwargs` in return value.
+
+        Note that internally this function calls `.tx.update()` followed by a call
+        to `optax.apply_updates()` to update `params` and `opt_state`.
+
+        Args:
+          grads: Gradients that have the same pytree structure as `.params`.
+          **kwargs: Additional dataclass attributes that should be `.replace()`-ed.
+
+        Returns:
+          An updated instance of `self` with `step` incremented by one, `params`
+          and `opt_state` updated by applying `grads`, and additional attributes
+          replaced as specified by `kwargs`.
+        """
+        if self.tx:
+            updates, new_opt_state = self.tx.update(grads, self.opt_state, self.params)
+            new_params = optax.apply_updates(self.params, updates)
+        else:
+            new_params = self.params
+            new_opt_state = self.opt_state
+
+        return self.replace(
+            step=self.step + 1,
+            params=new_params,
+            opt_state=new_opt_state,
+            **kwargs,
+        )
+
+    @classmethod
+    def create(cls, *, apply_fn, params, tx, **kwargs):
+        """Creates a new instance with `step=0` and initialized `opt_state`."""
+        opt_state = tx.init(params) if tx else None
+        return cls(
+            step=0,
+            apply_fn=apply_fn,
+            params=params,
+            tx=tx,
+            opt_state=opt_state,
+            **kwargs,
+        )

@@ -8,17 +8,21 @@ import numpy as np
 
 from flax.training import orbax_utils
 from collections import defaultdict
+from pprint import pprint
 
-from src.configs import ExperiorConfig
+from src.configs import ExperiorConfig, BetaTSPolicyConfig
 from src.commons import PRNGKey
-from src.baselines import get_baselines
+from src.experts import Expert, SyntheticExpert
+from src.baselines import BernoulliTS
+from src.models import BetaTSPolicy
 from src.eval import bayes_regret
 
 
 class Trainer:
-    def __init__(self, conf: ExperiorConfig):
+    def __init__(self, conf: ExperiorConfig, expert: Expert):
         self.conf = conf
         self.policy_state, self.prior_state = None, None
+        self.expert = expert
 
         # training steps - take key, policy_state, prior_state, batch of mu vectors
         # return updated state and logs
@@ -82,7 +86,7 @@ class Trainer:
         return jax.lax.stop_gradient(mu_vectors)
 
     def save_metrics(self, rng: PRNGKey):
-        # TODO maybe add more regrets here
+        # Save uniform and expert prior regret
         save_path = os.path.join(self.conf.out_dir, "metrics.json")
 
         def policy_fn(key, t, a, r):
@@ -90,25 +94,55 @@ class Trainer:
                 {"params": self.policy_state.params}, key, t, a, r
             )
 
-        models = get_baselines(self.conf)
+        models = {"BernoulliTS": BernoulliTS(self.conf.prior.num_actions)}
         models["ours"] = policy_fn
 
+        priors = {"uniform": None}
+        if isinstance(self.expert, SyntheticExpert):
+            priors["expert"] = lambda key, size: self.expert.prior_state.apply_fn(
+                {"params": self.expert.prior_state.params},
+                rng_key=key,
+                size=size,
+                method="sample",
+            )
+            rng, key = jax.random.split(rng)
+
+            # define a TS model w.r.t. expert prior
+            conf = BetaTSPolicyConfig(
+                num_actions=self.conf.prior.num_actions, prior=self.conf.expert.prior
+            )
+            beta_ts_state = BetaTSPolicy.create_state(key, None, conf)
+            models[
+                "BernoulliTS_TruePrior"
+            ] = lambda key, t, a, r: beta_ts_state.apply_fn(
+                {"params": beta_ts_state.params}, key, t, a, r
+            )
+
         metrics = {}
+        final_regrets = {}
 
         for name, model in models.items():
-            rng, key = jax.random.split(rng)
-            regret = bayes_regret(
-                key,
-                model,
-                self.conf.prior.num_actions,
-                self.conf.trainer.test_horizon,
-                self.conf.trainer.policy_trainer.mc_samples,
-            )
-            metrics[name] = regret.tolist()
-            wandb.log({f"policy/{name}_uniform_regret": regret[-1]})
+            metrics[name] = {}
+            for p, prior_fn in priors.items():
+                rng, key = jax.random.split(rng)
+                regret = bayes_regret(
+                    key,
+                    model,
+                    self.conf.prior.num_actions,
+                    self.conf.trainer.test_horizon,
+                    self.conf.trainer.policy_trainer.mc_samples,
+                    prior_fn=prior_fn,
+                )
+                metrics[name][p] = regret.tolist()
+                final_regrets[f"{name}_{p}"] = float(regret[-1])
+                if not self.conf.test_run:
+                    wandb.log({f"policy/{name}_{p}_regret": regret[-1]})
 
-        with open(save_path, "w") as fp:
-            json.dump(metrics, fp, indent=2)
+        if not self.conf.test_run:
+            with open(save_path, "w") as fp:
+                json.dump(metrics, fp, indent=2)
+        else:
+            pprint(final_regrets)
 
     def save_states(self, epoch, rng):
         ckpt = {

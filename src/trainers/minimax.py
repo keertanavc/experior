@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from tqdm import tqdm
 
 from src.configs import ExperiorConfig
+from src.experts import Expert
 from src.losses import get_policy_loss, prior_max_loss
 from src.rollout import policy_rollout
 from src.models import get_policy, get_prior
@@ -14,22 +15,22 @@ from .trainer import Trainer
 
 
 class MiniMaxTrainer(Trainer):
-    def __init__(self, conf: ExperiorConfig):
-        super().__init__(conf)
+    def __init__(self, conf: ExperiorConfig, expert: Expert):
+        super().__init__(conf, expert)
 
     def initialize(self, rng: PRNGKey):
         policy_key, prior_key = jax.random.split(rng)
 
         prior_opt = optax.adamw(learning_rate=self.conf.trainer.prior_trainer.lr)
-        self.prior_state = get_prior(self.conf).create_state(
-            prior_key, prior_opt, self.conf
+        self.prior_state = get_prior(self.conf.prior.name).create_state(
+            prior_key, prior_opt, self.conf.prior
         )
 
         policy_opt = optax.adamw(learning_rate=self.conf.trainer.policy_trainer.lr)
-        self.policy_state = get_policy(self.conf).create_state(
-            policy_key, policy_opt, self.conf
+        self.policy_state = get_policy(self.conf.policy.name).create_state(
+            policy_key, policy_opt, self.conf.policy
         )
-        policy_loss = get_policy_loss(self.conf)
+        policy_loss = get_policy_loss(self.conf.trainer.policy_trainer.grad_est)
 
         @jax.jit
         def _prior_step(key, policy_state, prior_state, batch):
@@ -51,7 +52,6 @@ class MiniMaxTrainer(Trainer):
                 out["log_probs"] = prior_log_p.mean()
 
                 # log prior_params
-                # TODO maybe cleaner way to do this
                 if self.conf.prior.name == "beta":
                     alpha_beta = jax.tree_map(lambda x: jnp.mean(x), prior_params)
                     out["alpha"] = alpha_beta["alphas_sq"]
@@ -113,7 +113,7 @@ class MiniMaxTrainer(Trainer):
         prior_bar = tqdm(range(current_epoch, prior_conf.epochs + 1), desc="Prior")
         policy_bar = tqdm(range(current_epoch, policy_conf.epochs + 1), desc="Policy")
 
-        for epoch in prior_bar:
+        for epoch in policy_bar:
             for i in range(1, prior_conf.steps + 1):
                 rng, key = jax.random.split(rng)
                 aux = self.train_step(key, "prior")

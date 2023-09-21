@@ -3,9 +3,10 @@ import wandb
 
 from omegaconf import OmegaConf
 
-from src.trainers import MiniMaxTrainer, MaxEntTrainer
+from src.trainers import MiniMaxTrainer, MaxEntTrainer, MLETrainer
 from src.utils import PRNGSequence, init_run_dir
 from src.configs import ExperiorConfig
+from src.experts import get_expert
 
 from pprint import pprint
 
@@ -43,16 +44,18 @@ def main(conf: ExperiorConfig):
         wandb.define_metric("policy/*", step_metric="policy/step")
 
     rng = PRNGSequence(conf.seed)
+    expert = get_expert(conf.expert)
     if conf.trainer.name == "minimax":
-        trainer = MiniMaxTrainer(conf)
+        trainer = MiniMaxTrainer(conf, expert)
     elif conf.trainer.name == "MaxEnt":
-        trainer = MaxEntTrainer(conf)
+        trainer = MaxEntTrainer(conf, expert)
+    elif conf.trainer.name == "mle":
+        trainer = MLETrainer(conf, expert)
 
     trainer.initialize(next(rng))
     trainer.train(next(rng))
 
-    if not conf.test_run:
-        trainer.save_metrics(next(rng))
+    trainer.save_metrics(next(rng))
 
 
 if __name__ == "__main__":
