@@ -23,12 +23,12 @@ class MaxEntTrainer(Trainer):
 
         expert_policy = self.expert.policy(prior_key2)
 
-        prior_opt = optax.adamw(learning_rate=self.conf.trainer.prior_trainer.lr)
+        prior_opt = optax.adam(learning_rate=self.conf.trainer.prior_trainer.lr)
         self.prior_state = get_prior(self.conf.prior.name).create_state(
             prior_key1, prior_opt, self.conf.prior, expert_policy
         )
 
-        policy_opt = optax.adamw(learning_rate=self.conf.trainer.policy_trainer.lr)
+        policy_opt = optax.adam(learning_rate=self.conf.trainer.policy_trainer.lr)
         self.policy_state = get_policy(self.conf.policy.name).create_state(
             policy_key, policy_opt, self.conf.policy
         )
@@ -119,6 +119,8 @@ class MaxEntTrainer(Trainer):
                 wandb.log({"prior/epoch": epoch})
                 self.save_states(epoch, rng)
 
+        # print(self.prior_state.params)
+
         for epoch in policy_bar:
             for j in range(1, policy_conf.steps + 1):
                 rng, key = jax.random.split(rng)
@@ -134,3 +136,5 @@ class MaxEntTrainer(Trainer):
             if not self.conf.test_run:
                 wandb.log({"policy/epoch": epoch})
                 self.save_states(epoch, rng)
+
+        # print(self.policy_state.params)

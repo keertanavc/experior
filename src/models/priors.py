@@ -49,7 +49,7 @@ class MaxEntPrior(nn.Module, Prior):
         self.ref_dist = self.config.ref_dist
         self.lambdas = self.param(
             "lambdas",
-            nn.initializers.lecun_normal(),
+            nn.initializers.normal(),
             (self.config.num_actions, 1),
         )
 

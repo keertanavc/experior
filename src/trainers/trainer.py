@@ -13,7 +13,7 @@ from pprint import pprint
 from src.configs import ExperiorConfig, BetaTSPolicyConfig
 from src.commons import PRNGKey
 from src.experts import Expert, SyntheticExpert
-from src.baselines import BernoulliTS
+from src.baselines import BernoulliTS, SuccElim
 from src.models import BetaTSPolicy
 from src.eval import bayes_regret
 
@@ -94,7 +94,13 @@ class Trainer:
                 {"params": self.policy_state.params}, key, t, a, r
             )
 
-        models = {"BernoulliTS": BernoulliTS(self.conf.prior.num_actions)}
+        rng, key = jax.random.split(rng)
+        expert_policy = self.expert.policy(key)
+
+        models = {
+            "BernoulliTS": BernoulliTS(expert_policy),
+            "SuccElim": SuccElim(expert_policy),
+        }
         models["ours"] = policy_fn
 
         priors = {"uniform": None}
@@ -121,9 +127,9 @@ class Trainer:
         metrics = {}
         final_regrets = {}
 
-        for name, model in models.items():
-            metrics[name] = {}
-            for p, prior_fn in priors.items():
+        for p, prior_fn in priors.items():
+            metrics[p] = {}
+            for name, model in models.items():
                 rng, key = jax.random.split(rng)
                 regret = bayes_regret(
                     key,
@@ -133,10 +139,10 @@ class Trainer:
                     self.conf.trainer.policy_trainer.mc_samples,
                     prior_fn=prior_fn,
                 )
-                metrics[name][p] = regret.tolist()
+                metrics[p][name] = regret.tolist()
                 final_regrets[f"{name}_{p}"] = float(regret[-1])
                 if not self.conf.test_run:
-                    wandb.log({f"policy/{name}_{p}_regret": regret[-1]})
+                    wandb.log({f"policy/{p}_{name}_regret": regret[-1]})
 
         if not self.conf.test_run:
             with open(save_path, "w") as fp:

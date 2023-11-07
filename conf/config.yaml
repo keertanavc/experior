@@ -12,7 +12,7 @@ defaults:
   - _self_
 
 prior:
-  num_actions: 100
+  num_actions: 20
 
 expert:
   prior:
@@ -24,18 +24,18 @@ expert:
 
 trainer:
   policy_trainer:
-    lr: 1e-2
+    lr: 1e-1
     mc_samples: 2048
-    epochs: 1500
+    epochs: 3000
     batch_size: 2048
 
   prior_trainer:
-    lr: 1e-2
+    lr: 1e-1
     mc_samples: 2048
     batch_size: 2048
-    epochs: 1000
+    epochs: 3000
 
-  test_horizon: 300
+  test_horizon: 200
   train_horizon: 100
 
 save_every_steps: 100

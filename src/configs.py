@@ -20,7 +20,7 @@ class BetaPriorConfig(BaseModel):
     num_actions: int
     init_alpha: Optional[Union[float, List[float]]]
     init_beta: Optional[Union[float, List[float]]]
-    epsilon: float = 1e-3
+    epsilon: float = 1e-8
 
     @validator("init_alpha")
     def validate_init_alpha(cls, v, values, field, config):

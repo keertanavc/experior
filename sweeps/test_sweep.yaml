@@ -9,10 +9,10 @@ parameters:
     policy:
         values: [small, medium]
 
-    train.policy_lr:
+    trainer.policy_trainer.policy_lr:
         values: [0.001, 0.0001]
 
-    train.monte_carlo_samples:
+    trainer.monte_carlo_samples:
       values: [50, 100, 200]
 
 command:
