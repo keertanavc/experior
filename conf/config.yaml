@@ -35,7 +35,7 @@ trainer:
     batch_size: 2048
     epochs: 3000
 
-  test_horizon: 200
+  test_horizon: 100
   train_horizon: 100
 
 save_every_steps: 100
