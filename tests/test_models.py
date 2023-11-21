@@ -9,20 +9,17 @@ from src.rollout import policy_rollout
 from src.utils import PRNGSequence
 from src.configs import ExperiorConfig, BetaTSPolicyConfig
 
-from tests import TEST_CONFIG
-
 from copy import deepcopy
 
 # TODO best way to write test for jax?
-# TODO add test config similar to train
 
 
-def test_transformer_policy():
-    return _test_policy(TEST_CONFIG)
+def test_transformer_policy(conf: ExperiorConfig):
+    return _test_policy(conf)
 
 
-def test_beta_ts_policy():
-    conf = deepcopy(TEST_CONFIG)
+def test_beta_ts_policy(conf: ExperiorConfig):
+    conf = deepcopy(conf)
     conf.policy = BetaTSPolicyConfig(
         prior=conf.prior, num_actions=conf.prior.num_actions
     )
@@ -55,8 +52,8 @@ def _test_policy(conf: ExperiorConfig):
     assert jnp.allclose(action_probs.sum(axis=1), 1.0)
 
 
-def test_softelim_policy():
-    conf = deepcopy(TEST_CONFIG)
+def test_softelim_policy(conf: ExperiorConfig):
+    conf = deepcopy(conf)
     conf.trainer.policy_trainer.batch_size = 2
     conf.trainer.test_horizon = 5
     conf.prior.num_actions = 2
@@ -85,12 +82,12 @@ def test_softelim_policy():
     assert jnp.isclose(action_probs, probs).all()
 
 
-def test_transformer_policy_rollout():
-    return _test_policy_rollout(TEST_CONFIG)
+def test_transformer_policy_rollout(conf: ExperiorConfig):
+    return _test_policy_rollout(conf)
 
 
-def test_softelim_policy_rollout():
-    conf = deepcopy(TEST_CONFIG)
+def test_softelim_policy_rollout(conf: ExperiorConfig):
+    conf = deepcopy(conf)
     conf.policy.name = "softelim"
 
     return _test_policy_rollout(conf)
@@ -141,7 +138,7 @@ def _test_policy_rollout(conf: ExperiorConfig):
     assert jnp.allclose(probs.sum(axis=2), 1.0)
 
 
-def test_rollout():
+def test_rollout(conf: ExperiorConfig):
     num_actions = 3
     num_samples = 2
     horizon = 4
@@ -171,9 +168,9 @@ def test_rollout():
     assert jnp.allclose(probs.sum(axis=2), 1.0)
 
 
-def test_prior():
+def test_prior(conf: ExperiorConfig):
     rng = PRNGSequence(123)
-    num_actions = TEST_CONFIG.prior.num_actions
+    num_actions = conf.prior.num_actions
     n_samples = 1000
     epochs = 1000
     data = jax.random.beta(
@@ -184,9 +181,7 @@ def test_prior():
     )
 
     tx = optax.adam(learning_rate=1e-2)
-    state = get_prior(TEST_CONFIG.prior.name).create_state(
-        next(rng), tx, conf=TEST_CONFIG.prior
-    )
+    state = get_prior(conf.prior.name).create_state(next(rng), tx, conf=conf.prior)
 
     @jax.jit
     def update_step(state, batch):
@@ -205,21 +200,21 @@ def test_prior():
             pbar.update(1)
 
     assert jnp.isclose(
-        state.params["alphas_sq"] ** 2 + TEST_CONFIG.prior.epsilon, 2, atol=1e-1
+        state.params["alphas_sq"] ** 2 + conf.prior.epsilon, 2, atol=1e-1
     ).all()
     assert jnp.isclose(
-        state.params["betas_sq"] ** 2 + TEST_CONFIG.prior.epsilon, 1, atol=1e-1
+        state.params["betas_sq"] ** 2 + conf.prior.epsilon, 1, atol=1e-1
     ).all()
 
 
-def test_prior_sample():
+def test_prior_sample(conf: ExperiorConfig):
     size = 100
-    num_actions = TEST_CONFIG.prior.num_actions
+    num_actions = conf.prior.num_actions
     rng = PRNGSequence(123)
 
-    prior_cls = get_prior(TEST_CONFIG.prior.name)
+    prior_cls = get_prior(conf.prior.name)
     state = prior_cls.create_state(
-        next(rng), optax.adam(learning_rate=1e-2), conf=TEST_CONFIG.prior
+        next(rng), optax.adam(learning_rate=1e-2), conf=conf.prior
     )
 
     samples = state.apply_fn(

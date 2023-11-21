@@ -1,8 +1,8 @@
 defaults:
-  - trainer: maxent
+  - trainer: minimax
   - expert: synthetic
-  - policy: softelim
-  - prior: maxent
+  - policy: large
+  - prior: random
   - hydra: default
   - wandb: default
   - override hydra/hydra_logging: disabled
@@ -18,13 +18,13 @@ expert:
   prior:
     name: beta
     num_actions: ${prior.num_actions}
-    init_alpha: ${eval:'[20.0, 15.0, 25.0] + [2.0] * (${prior.num_actions} - 3)'}
-    init_beta: ${eval:'[2.0] * 3 + [15.0] * (${prior.num_actions} - 3)'}
+    init_alpha: null #${eval:'[20.0, 15.0, 25.0] + [2.0] * (${prior.num_actions} - 3)'}
+    init_beta: null #${eval:'[2.0] * 3 + [15.0] * (${prior.num_actions} - 3)'}
 
 
 trainer:
   policy_trainer:
-    lr: 1e-1
+    lr: 1e-3
     mc_samples: 2048
     epochs: 3000
     batch_size: 2048
@@ -35,8 +35,8 @@ trainer:
     batch_size: 2048
     epochs: 3000
 
-  test_horizon: 100
-  train_horizon: 100
+  test_horizon: 20
+  train_horizon: 20
 
 save_every_steps: 100
 keep_every_steps: 1000

@@ -1,0 +1,59 @@
+defaults:
+  - _self_
+  - override hydra/hydra_logging: disabled
+  - override hydra/job_logging: disabled
+
+hydra:
+  output_subdir: null
+  run:
+    dir: .
+
+policy:
+  name: transformer
+  h_dim: 64
+  dtype: jnp.float32
+  num_heads: 4
+  drop_p: 0.1
+  n_blocks: 3
+
+expert:
+  name: synthetic
+  prior:
+    name: beta
+    num_actions: 3
+    init_alpha: 2
+    init_beta: 1
+
+prior:
+  name: beta
+  num_actions: 3
+  init_alpha: 2
+  init_beta: 1
+
+trainer:
+  name: minimax
+  policy_trainer:
+    lr: 1e-3
+    batch_size: 32
+    epochs: 10
+    mc_samples: 32
+    grad_est:
+      name: reinforce
+
+  prior_trainer:
+    lr: 1e-3
+    batch_size: 32
+    epochs: 10
+    mc_samples: 32
+
+  test_horizon: 20
+  train_horizon: 10
+
+seed: 42
+test_run: True
+out_dir: output/tests/
+save_every_steps: 100
+keep_every_steps: 100
+
+wandb:
+  project: test

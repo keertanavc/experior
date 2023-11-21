@@ -6,11 +6,10 @@ import os, json
 from src.baselines import BernoulliTS
 from src.utils import PRNGSequence
 from src.eval import bayes_regret
+from src.configs import ExperiorConfig
 
-from tests import TEST_CONFIG
 
-
-def test_bernoulli_ts():
+def test_bernoulli_ts(conf: ExperiorConfig):
     key = PRNGSequence(42)
     num_actions = 3
     expert_policy = jnp.ones((num_actions,)) / num_actions
@@ -19,13 +18,13 @@ def test_bernoulli_ts():
         next(key),
         policy,
         num_actions,
-        TEST_CONFIG.trainer.test_horizon,
-        TEST_CONFIG.trainer.policy_trainer.mc_samples,
+        conf.trainer.test_horizon,
+        conf.trainer.policy_trainer.mc_samples,
     )
 
     metrics = {"ts_regret": regret.tolist()}
 
-    with open(os.path.join(TEST_CONFIG.out_dir, "ts_test"), "w") as fp:
+    with open(os.path.join(conf.out_dir, "ts_test"), "w") as fp:
         json.dump(metrics, fp, indent=2)
 
     # Create some mock data for testing
