@@ -16,7 +16,7 @@ from tests.test_models import (
 )
 from tests.test_posterior import test_sglangevin
 from tests.test_baselines import test_bernoulli_ts
-from tests.test_envs import test_bernoulli_bandit
+from tests.test_envs import test_bernoulli_bandit, test_linear_gaussian_bandit
 
 
 @hydra.main(version_base=None, config_path="test_conf", config_name="config")
@@ -35,7 +35,8 @@ def main(conf: ExperiorConfig):
         # test_prior_sample,
         # test_bernoulli_ts,
         # test_sglangevin,
-        test_bernoulli_bandit
+        test_bernoulli_bandit,
+        test_linear_gaussian_bandit,
     ]
 
     for test in tqdm.tqdm(tests):

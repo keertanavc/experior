@@ -3,6 +3,8 @@ import jax
 import jax.numpy as jnp
 from functools import partial
 
+# TODO change rollout and other parts based on new env interface
+
 
 @partial(jax.jit, static_argnames=("policy_fn", "horizon"))
 def policy_rollout(policy_fn, rng_key, mu_vectors, horizon):

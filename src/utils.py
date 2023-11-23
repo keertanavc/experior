@@ -3,9 +3,11 @@ import jax.numpy as jnp
 import os
 import yaml
 import wandb
+import chex
 
 from jax.scipy.special import xlogy
 from random_word import RandomWords
+from typing import Tuple
 
 
 from src.configs import ExperiorConfig
@@ -115,3 +117,23 @@ def kl_safe(p, q, eps=1e-6):
     """
     q = (q + eps) / q.shape[-1]
     return (xlogy(p, p) - xlogy(p, q)).sum(axis=-1)
+
+
+def uniform_sample_ball(rng_key, size: int, d: int) -> chex.Array:
+    """Samples uniformly from the unit ball in R^{d}.
+
+    Args:
+        rng_key: A JAX random key.
+        size: The size of the sample.
+        d: The dimension of the ball.
+
+    Returns:
+        A sample from the unit ball in R^{d}, shape (size, d).
+    """
+    key1, key2 = jax.random.split(rng_key)
+    norm = jax.random.normal(key1, (size, d))
+    sphere = norm / jnp.linalg.norm(norm, axis=-1, keepdims=True)
+
+    # Generate random radii
+    random_radii = jax.random.uniform(key2, (size, 1)) ** (1 / d)
+    return sphere * random_radii
