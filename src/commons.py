@@ -1,30 +1,30 @@
 import optax
+import chex
 
 import flax.linen as nn
 import jax.numpy as jnp
 
-from typing import Callable, Sequence, Any, Tuple
+from typing import Callable, Sequence
 from flax.training import train_state
 
-PRNGKey = Any
-Params = Any
-Variables = Any
+from pydantic import BaseModel as BaseModel
 
-Shape = Tuple[int, ...]
-Dtype = Any
-Array = Any
+
+class BaseConfig(BaseModel):
+    class Config:
+        arbitrary_types_allowed = True
 
 
 class MLP(nn.Module):
     features: Sequence[int]
     kernel_init: Callable[
-        [PRNGKey, Shape, Dtype], Array
+        [chex.PRNGKey, chex.Shape, chex.ArrayDType], chex.Array
     ] = nn.initializers.xavier_uniform()
-    bias_init: Callable[[PRNGKey, Shape, Dtype], Array] = nn.initializers.normal(
-        stddev=1e-6
-    )
+    bias_init: Callable[
+        [chex.PRNGKey, chex.Shape, chex.ArrayDType], chex.Array
+    ] = nn.initializers.normal(stddev=1e-6)
     activation: str = "relu"
-    dtype: Dtype = jnp.float32
+    dtype: chex.ArrayDType = jnp.float32
 
     @nn.compact
     def __call__(self, x):
@@ -51,7 +51,7 @@ class MLP(nn.Module):
 class TransformerBlock(nn.Module):
     h_dim: int
     num_heads: int
-    dtype: Dtype
+    dtype: chex.ArrayDType
     drop_p: float
 
     @nn.compact

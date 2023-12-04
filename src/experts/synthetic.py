@@ -1,20 +1,20 @@
 import jax
+import chex
 import jax.numpy as jnp
 
 from abc import ABC, abstractmethod
 
 from src.configs import SyntheticExpertConfig
 from src.models import get_prior
-from src.commons import PRNGKey
 
 
 class Expert(ABC):
     @abstractmethod
-    def policy(self, rng: PRNGKey):
+    def policy(self, rng: chex.PRNGKey):
         """Returns the expert policy, shape (num_actions, )"""
         pass
 
-    def __call__(self, rng: PRNGKey):
+    def __call__(self, rng: chex.PRNGKey):
         return self.policy(rng)
 
 
@@ -26,7 +26,7 @@ class SyntheticExpert(Expert):
             rng, None, conf.prior
         )
 
-    def policy(self, rng: PRNGKey):
+    def policy(self, rng: chex.PRNGKey):
         mu_vectors = self.prior_state.apply_fn(
             {"params": self.prior_state.params},
             rng,
@@ -41,5 +41,5 @@ class SyntheticExpert(Expert):
 
         return opt_actions.mean(axis=0)
 
-    def __call__(self, rng: PRNGKey):
+    def __call__(self, rng: chex.PRNGKey):
         return self.policy(rng)

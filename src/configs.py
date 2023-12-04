@@ -4,8 +4,6 @@ from typing import Any, Optional, Union, Callable, List
 import jax.numpy as jnp
 from jax.random import uniform, normal
 
-from src.commons import PRNGKey
-
 VAR_BASELINES = ["opt"]
 GRAD_ESTIMATORS = ["reinforce", "binforce"]
 TRAINERS = ["MaxEnt", "minimax", "mle"]

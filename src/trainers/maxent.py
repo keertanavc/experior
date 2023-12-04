@@ -1,5 +1,6 @@
 import jax
 import optax
+import chex
 import wandb
 
 import jax.numpy as jnp
@@ -10,7 +11,6 @@ from src.experts import Expert
 from src.losses import get_policy_loss
 from src.rollout import policy_rollout
 from src.models import get_policy, get_prior
-from src.commons import PRNGKey
 from .trainer import Trainer
 
 
@@ -18,7 +18,7 @@ class MaxEntTrainer(Trainer):
     def __init__(self, conf: ExperiorConfig, expert: Expert):
         super().__init__(conf, expert)
 
-    def initialize(self, rng: PRNGKey):
+    def initialize(self, rng: chex.PRNGKey):
         policy_key, prior_key1, prior_key2 = jax.random.split(rng, 3)
 
         expert_policy = self.expert.policy(prior_key2)
@@ -86,7 +86,7 @@ class MaxEntTrainer(Trainer):
         self._policy_step = _policy_step
         self._prior_step = _prior_step
 
-    def train(self, rng: PRNGKey):
+    def train(self, rng: chex.PRNGKey):
         if self.conf.wandb.resume:
             ckpt = self.load_states()
             self.policy_state = ckpt["policy_model"]

@@ -7,12 +7,9 @@ import chex
 
 from jax.scipy.special import xlogy
 from random_word import RandomWords
-from typing import Tuple
 
 
 from src.configs import ExperiorConfig
-from src.trainers import Trainer
-from src.commons import Callable
 
 
 # adapted from https://github.com/unstable-zeros/tasil
@@ -75,37 +72,37 @@ def init_run_dir(conf: ExperiorConfig) -> ExperiorConfig:
     return conf
 
 
-# TODO better document
-def get_policy_prior_from_run(
-    run_path, step=None, only_conf=False
-) -> (Callable, Callable, Callable, ExperiorConfig):
-    with open(os.path.join(run_path, "config.yaml")) as fp:
-        conf = ExperiorConfig(**yaml.load(fp, Loader=yaml.Loader))
-    if only_conf:
-        return None, None, None, conf
+# # TODO better document
+# def get_policy_prior_from_run(
+#     run_path, step=None, only_conf=False
+# ) -> (Callable, Callable, Callable, ExperiorConfig):
+#     with open(os.path.join(run_path, "config.yaml")) as fp:
+#         conf = ExperiorConfig(**yaml.load(fp, Loader=yaml.Loader))
+#     if only_conf:
+#         return None, None, None, conf
 
-    trainer = Trainer(conf)
-    rng = PRNGSequence(0)
-    trainer.initialize(next(rng))
-    ckpt = trainer.load_states(step)
-    policy_state = ckpt["policy_model"]
-    prior_state = ckpt["prior_model"]
+#     trainer = Trainer(conf)
+#     rng = PRNGSequence(0)
+#     trainer.initialize(next(rng))
+#     ckpt = trainer.load_states(step)
+#     policy_state = ckpt["policy_model"]
+#     prior_state = ckpt["prior_model"]
 
-    def policy_fn(key, t, a, r):
-        return policy_state.apply_fn({"params": policy_state.params}, key, t, a, r)
+#     def policy_fn(key, t, a, r):
+#         return policy_state.apply_fn({"params": policy_state.params}, key, t, a, r)
 
-    def prior_fn(key, size):
-        return prior_state.apply_fn(
-            {"params": prior_state.params},
-            rng_key=key,
-            size=size,
-            method="sample",
-        )
+#     def prior_fn(key, size):
+#         return prior_state.apply_fn(
+#             {"params": prior_state.params},
+#             rng_key=key,
+#             size=size,
+#             method="sample",
+#         )
 
-    if conf.prior.name == "MaxEnt":
-        raise Exception("Fix the MaxEnt density function")  # TODO
+#     if conf.prior.name == "MaxEnt":
+#         raise Exception("Fix the MaxEnt density function")  # TODO
 
-    return policy_fn, prior_fn, conf
+#     return policy_fn, prior_fn, conf
 
 
 def kl_safe(p, q, eps=1e-6):
@@ -117,6 +114,11 @@ def kl_safe(p, q, eps=1e-6):
     """
     q = (q + eps) / q.shape[-1]
     return (xlogy(p, p) - xlogy(p, q)).sum(axis=-1)
+
+
+def moving_average(data: jnp.array, window_size: int):
+    """Smooth data by calculating the moving average over a specified window size."""
+    return jnp.convolve(data, jnp.ones(window_size) / window_size, mode="valid")
 
 
 def uniform_sample_ball(rng_key, size: int, d: int) -> chex.Array:

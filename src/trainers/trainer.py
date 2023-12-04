@@ -2,6 +2,7 @@ import jax
 import os
 import json
 import wandb
+import chex
 
 import orbax.checkpoint
 import numpy as np
@@ -11,7 +12,6 @@ from collections import defaultdict
 from pprint import pprint
 
 from src.configs import ExperiorConfig, BetaTSPolicyConfig
-from src.commons import PRNGKey
 from src.experts import Expert, SyntheticExpert
 from src.baselines import BernoulliTS, SuccElim
 from src.models import BetaTSPolicy
@@ -40,14 +40,14 @@ class Trainer:
         else:
             self.ckpt_manager = None
 
-    def initialize(self, rng: PRNGKey):
+    def initialize(self, rng: chex.PRNGKey):
         # define training steps here
         raise NotImplementedError
 
-    def train(self, rng: PRNGKey):
+    def train(self, rng: chex.PRNGKey):
         raise NotImplementedError
 
-    def train_step(self, rng: PRNGKey, objective: str):
+    def train_step(self, rng: chex.PRNGKey, objective: str):
         assert objective in ["policy", "prior"]
         step_func = self._policy_step if objective == "policy" else self._prior_step
         trainer_conf = (
@@ -75,7 +75,7 @@ class Trainer:
 
         return {f"{objective}/{k}": np.mean(v) for k, v in output.items()}
 
-    def _sample_envs(self, rng: PRNGKey, size):
+    def _sample_envs(self, rng: chex.PRNGKey, size):
         mu_vectors = self.prior_state.apply_fn(
             {"params": self.prior_state.params},
             rng_key=rng,
@@ -85,7 +85,7 @@ class Trainer:
 
         return jax.lax.stop_gradient(mu_vectors)
 
-    def save_metrics(self, rng: PRNGKey):
+    def save_metrics(self, rng: chex.PRNGKey):
         # Save uniform and expert prior regret
         save_path = os.path.join(self.conf.out_dir, "metrics.json")
 
@@ -171,7 +171,7 @@ class Trainer:
             "policy_model": self.policy_state,
             "prior_model": self.prior_state,
             "epoch": 0,
-            "rng": jax.random.PRNGKey(0),
+            "rng": jax.random.chex.PRNGKey(0),
         }
 
         step = step or self.ckpt_manager.latest_step()

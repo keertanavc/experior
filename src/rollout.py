@@ -1,12 +1,10 @@
 import jax
-
 import jax.numpy as jnp
-from functools import partial
 
-# TODO change rollout and other parts based on new env interface
+from typing import Any
 
 
-@partial(jax.jit, static_argnames=("policy_fn", "horizon"))
+# @partial(jax.jit, static_argnames=("policy_fn", "horizon"))
 def policy_rollout(policy_fn, rng_key, mu_vectors, horizon):
     """Returns a rollout of the policy, i.e. a sequence of actions and rewards.
 

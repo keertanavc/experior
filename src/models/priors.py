@@ -1,4 +1,5 @@
 import jax
+import chex
 
 import flax.linen as nn
 import jax.numpy as jnp
@@ -6,7 +7,7 @@ import jax.scipy.stats as jstats
 
 
 from src.configs import MaxEntPriorConfig, BetaPriorConfig
-from src.commons import Array, TrainState
+from src.commons import TrainState
 
 from abc import ABC, abstractmethod
 
@@ -43,7 +44,7 @@ class MaxEntPrior(nn.Module, Prior):
     """A maximum entropy prior distribution over arm rewards for a Bernoulli bandit."""
 
     config: MaxEntPriorConfig
-    expert_policy: Array  # expert distribution, shape: (num_actions,)
+    expert_policy: chex.Array  # expert distribution, shape: (num_actions,)
 
     def setup(self):
         self.ref_dist = self.config.ref_dist
@@ -92,7 +93,7 @@ class MaxEntPrior(nn.Module, Prior):
 
     @classmethod
     def create_state(
-        cls, rng_key, optimizer, conf: MaxEntPriorConfig, expert_policy: Array
+        cls, rng_key, optimizer, conf: MaxEntPriorConfig, expert_policy: chex.Array
     ) -> TrainState:
         """Returns an initial state for the prior."""
         prior_model = cls(config=conf, expert_policy=expert_policy)

@@ -15,7 +15,8 @@
         "editor.tabSize": 2,
         "editor.defaultFormatter": "ms-python.black-formatter",
         "editor.formatOnSave": true,
-        "editor.detectIndentation": false
+        "editor.detectIndentation": false,
+        "editor.accessibilitySupport": "off",
     },
     "files.watcherExclude": {
         "**/.git/**": true,

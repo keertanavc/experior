@@ -1,6 +1,6 @@
 import jax
+import chex
 
-from src.commons import PRNGKey
 from src.configs import ExperiorConfig
 from src.experts import Expert
 from src.losses import prior_mle_loss
@@ -11,7 +11,7 @@ class MLETrainer(MaxEntTrainer):
     def __init__(self, conf: ExperiorConfig, expert: Expert):
         super().__init__(conf, expert)
 
-    def initialize(self, rng: PRNGKey):
+    def initialize(self, rng: chex.PRNGKey):
         super().initialize(rng)
 
         @jax.jit
