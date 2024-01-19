@@ -29,7 +29,6 @@ last_goal_col_dist = jax.tree_util.Partial(lambda key, size: size - 1)
 
 @struct.dataclass
 class EnvParams:
-    goal_column_dist: Callable[[chex.PRNGKey, int], int] = last_goal_col_dist
     goal_column: int = None
     unscaled_move_cost: float = 0.01  # the cost of following the optimal path
     max_steps_in_episode: int = 2000
@@ -54,11 +53,11 @@ class DeepSea(Environment):
     @property
     def default_params(self) -> EnvParams:
         # Default environment parameters
-        return EnvParams(goal_column_dist=self.goal_column_dist)
+        return EnvParams()
 
     def init_env(self, key: chex.PRNGKey, params: EnvParams) -> EnvParams:
         """Initialize environment state."""
-        goal_column = params.goal_column_dist(key, self.size)
+        goal_column = self.goal_column_dist(key, self.size)
         return params.replace(goal_column=goal_column)
 
     def step_env(

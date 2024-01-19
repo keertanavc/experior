@@ -31,6 +31,9 @@ class MaxEntTrainState(struct.PyTreeNode):
             **kwargs,
         )
 
+    def reset_opt_state(self):
+        return self.replace(opt_state=jax.vmap(self.tx.init)(self.params))
+
     @classmethod
     def create(cls, *, rng, n_trajectory, lambda_, epsilon, tx, num_envs, **kwargs):
         """Creates a new instance with `step=0` and initialized `opt_state`."""

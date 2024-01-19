@@ -223,9 +223,11 @@ def make_max_ent_dqn_train(
                     sampled_log_likelihoods, init_emp_ent=0.0  # TODO fix
                 )
 
+                max_ent_s = max_ent_state.reset_opt_state()  # TODO fix
+
                 max_ent_s, metrics = jax.lax.scan(
                     max_ent_update_step,
-                    init=max_ent_state,
+                    init=max_ent_s,
                     xs=None,
                     length=max_ent_updates_per_step,
                 )
