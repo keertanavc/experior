@@ -10,7 +10,7 @@ import jax.numpy as jnp
 from jax import lax
 from typing import Tuple
 
-from typing import Tuple, Callable, Union
+from typing import Tuple, Callable, Union, Optional
 from flax import struct
 from gymnax.environments import EnvParams, EnvState, spaces
 from gymnax.environments.environment import EnvParams
@@ -18,6 +18,7 @@ from .env import Environment
 
 
 Param = chex.Array
+MetaParam = chex.Array
 Context = chex.Array
 Action = Union[int, float, chex.Array]
 
@@ -37,8 +38,9 @@ class BayesStochasticBandit(Environment):
     def __init__(
         self,
         action_space: spaces.Space,
-        prior_fn: Callable[[chex.PRNGKey], Param],
+        prior_fn: Callable[[chex.PRNGKey, Optional[MetaParam]], Param],
         reward_dist_fn: Callable[[chex.PRNGKey, Param, Context, Action], float],
+        reward_mean_fn: Callable[[Param, Context, Action], float],
         best_action_value_fn: Callable[[Param, Context], Tuple[Action, float]],
         init_context_dist_fn: Callable[[chex.PRNGKey], Context] = jax.tree_util.Partial(
             lambda k: jnp.array([0.0])
@@ -49,6 +51,7 @@ class BayesStochasticBandit(Environment):
         self.best_action_value_fn = best_action_value_fn
         self.prior_fn = prior_fn
         self.reward_dist_fn = reward_dist_fn
+        self.reward_mean_fn = reward_mean_fn
         self.init_context_dist_fn = init_context_dist_fn
 
     @property
@@ -56,9 +59,14 @@ class BayesStochasticBandit(Environment):
         # Default environment parameters
         return EnvParams(reward_param=self.prior_fn(jax.random.PRNGKey(42)))
 
-    def init_env(self, key: PRNGKey, params: EnvParams) -> EnvParams:
-        reward_param = self.prior_fn(key)
+    def init_env(
+        self, key: PRNGKey, params: EnvParams, meta_params: MetaParam = None
+    ) -> EnvParams:
+        reward_param = self.prior_fn(key, meta_params)
         return params.replace(reward_param=reward_param)
+
+    def optimal_value(self, state: EnvState, params: EnvParams) -> float:
+        return self.best_action_value_fn(params.reward_param, state.current_context)[1]
 
     def step_env(
         self, key: chex.PRNGKey, state: EnvState, action: int, params: EnvParams
@@ -74,7 +82,13 @@ class BayesStochasticBandit(Environment):
             lax.stop_gradient(state),
             reward,
             done,
-            {},
+            {
+                "reward_mean": self.reward_mean_fn(
+                    params.reward_param, context, action
+                ),
+                "optimal_value": self.optimal_value(state, params),
+                "optimal_action": self.optimal_policy(key, state, params),
+            },
         )
 
     def optimal_policy(

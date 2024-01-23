@@ -7,6 +7,8 @@ from experior.experts import Trajectory
 from experior.envs import Environment
 from experior.utils import VecTrainState
 
+from gymnax.wrappers.purerl import FlattenObservationWrapper, LogWrapper
+
 
 def make_discrete_ppo_train(
     env: Environment,
@@ -26,6 +28,9 @@ def make_discrete_ppo_train(
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
 ):
+    env = FlattenObservationWrapper(env)
+    env = LogWrapper(env)
+
     def train(rng):
         # init the actor-critic network
         tx = optax.chain(
@@ -88,7 +93,7 @@ def make_discrete_ppo_train(
                     env_params,
                 )  # shape: (num_envs, num_actors, ...)
                 transition = Trajectory(
-                    action, reward, obsv, value, log_prob, done, info
+                    action, reward, last_obs, value, log_prob, done, info
                 )
                 runner_state = (train_state, env_state, obsv, rng)
                 return runner_state, transition
@@ -228,7 +233,7 @@ def make_discrete_ppo_train(
                 _update_epoch, update_state, None, epochs_per_iteration
             )
             train_state = update_state[0]
-            metric = {"trajectories": traj_batch, "losses": losses}
+            metric = {"metrics": traj_batch.info, "losses": losses}
             rng = update_state[-1]
 
             runner_state = (train_state, env_state, last_obs, rng)
@@ -239,7 +244,7 @@ def make_discrete_ppo_train(
         update_nums = steps // train_frequency // num_actors + 1
         runner_state, output = jax.lax.scan(
             _train_step, runner_state, None, update_nums
-        ) # shape: (update_nums, train_frequency, num_envs, num_actors, ...)
+        )  # shape: (update_nums, train_frequency, num_envs, num_actors, ...)
         return runner_state, output
 
     return train

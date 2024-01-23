@@ -3,9 +3,9 @@ import jax
 import chex
 import flashbax as fbx
 
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 
-from experior.envs import Environment
+from experior.envs import Environment, MetaParam
 from .utils import RewardModel
 
 
@@ -17,11 +17,11 @@ def make_thompson_sampling(
     langevin_learning_rate: float,
     langevin_batch_size: float,
     langevin_updates_per_step: int,
-    prior_log_pdf: Callable[[Any], chex.Array] = None,
+    prior_log_pdf: Callable[[Any, Optional[MetaParam]], chex.Array] = None,
     langevin_grad_clip: float = 50.0,
 ):
     if prior_log_pdf is None:
-        prior_log_pdf = jax.tree_util.Partial(lambda p: jnp.zeros((1,)))
+        prior_log_pdf = jax.tree_util.Partial(lambda p, _: jnp.zeros((1,)))
 
     def langevin_posterior_sampling(
         rng: chex.PRNGKey,
@@ -30,12 +30,15 @@ def make_thompson_sampling(
         actions: chex.Array,
         rewards: chex.Array,
         step_i: int,
+        meta_params: Optional[MetaParam] = None,
     ):
         # using https://proceedings.mlr.press/v119/mazumdar20a/mazumdar20a.pdf
         def _update_parameters(runner_state, _):
             rng, params = runner_state
             # Compute the gradient of the unnormalized log prior
-            grad_log_prior = jax.grad(lambda p: prior_log_pdf(p).sum())(params)
+            grad_log_prior = jax.grad(lambda p: prior_log_pdf(p, meta_params).sum())(
+                params
+            )
 
             # Compute the gradient of the log likelihood
             def log_likelihood_fn(p):
@@ -85,11 +88,11 @@ def make_thompson_sampling(
         )
         return runner_state[1]
 
-    def train(rng):
+    def train(rng, meta_params: chex.Array = None):
         # init env
         rng, rng_ = jax.random.split(rng)
-        env_params = jax.vmap(env.init_env, in_axes=(0, None))(
-            jax.random.split(rng_, num_envs), env.default_params
+        env_params = jax.vmap(env.init_env, in_axes=(0, None, None))(
+            jax.random.split(rng_, num_envs), env.default_params, meta_params
         )
         rng, rng_ = jax.random.split(rng)
         obs, env_state = jax.vmap(env.reset)(
@@ -130,7 +133,7 @@ def make_thompson_sampling(
 
             # step env
             rng, rng_ = jax.random.split(rng)
-            obs, env_state, reward, done, info = jax.vmap(env.step)(
+            new_obs, env_state, reward, done, info = jax.vmap(env.step)(
                 jax.random.split(rng_, num_envs), env_state, action, env_params
             )
 
@@ -149,7 +152,7 @@ def make_thompson_sampling(
             batch = buffer.sample(buffer_state, rng_)
             rng, rng_ = jax.random.split(rng)
             params = jax.vmap(
-                langevin_posterior_sampling, in_axes=(0, 0, 1, 1, 1, None)
+                langevin_posterior_sampling, in_axes=(0, 0, 1, 1, 1, None, None)
             )(
                 jax.random.split(rng_, num_envs),
                 reward_params,
@@ -157,9 +160,18 @@ def make_thompson_sampling(
                 batch.experience["action"],
                 batch.experience["reward"],
                 i,
+                meta_params,
             )
-            runner_state = (obs, env_state, params, buffer_state, rng)
-            return runner_state, {"reward": reward}
+            runner_state = (new_obs, env_state, params, buffer_state, rng)
+            return (
+                runner_state,
+                {
+                    "obs": obs,
+                    "action": action,
+                    "reward": reward,
+                    **info,
+                },
+            )
 
         runner_state = (obs, env_state, reward_params, buffer_state, rng)
         runner_state, metrics = jax.lax.scan(

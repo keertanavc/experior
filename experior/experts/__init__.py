@@ -18,12 +18,16 @@ class Trajectory(NamedTuple):
 
 
 def generate_optimal_trajectories(
-    rng: chex.PRNGKey, env: Environment, num_trajectories: int, horizon: int
+    rng: chex.PRNGKey,
+    env: Environment,
+    num_trajectories: int,
+    horizon: int,
+    meta_params: chex.Array = None,
 ):
     rng, rng_ = jax.random.split(rng)
     params = env.default_params
-    params = jax.vmap(env.init_env, in_axes=(0, None))(
-        jax.random.split(rng_, num_trajectories), params
+    params = jax.vmap(env.init_env, in_axes=(0, None, None))(
+        jax.random.split(rng_, num_trajectories), params, meta_params
     )
 
     def optimal_rollout(key, params):

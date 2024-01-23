@@ -1,5 +1,6 @@
 import jax.numpy as jnp
 import jax
+import chex
 import optax
 
 from experior.envs import Environment
@@ -26,7 +27,7 @@ def make_max_ent_thompson_sampling(
     init_emp_ent: float = 0.0,
     langevin_grad_clip: float = 50.0,
 ):
-    def train(rng, expert_trajectories: Trajectory):
+    def train(rng, expert_trajectories: Trajectory, meta_params: chex.Array = None):
         rng, rng_ = jax.random.split(rng)
         obs, _ = env.reset(rng_, env.default_params)
         rng, rng_ = jax.random.split(rng)
@@ -75,7 +76,7 @@ def make_max_ent_thompson_sampling(
         )
 
         prior_log_pdf = jax.tree_util.Partial(
-            lambda p: max_ent_state.log_prior_fn(
+            lambda p, _: max_ent_state.log_prior_fn(
                 max_ent_state.params, get_expert_log_likelihood(p)
             )
         )
@@ -91,7 +92,7 @@ def make_max_ent_thompson_sampling(
             prior_log_pdf,
             langevin_grad_clip,
         )
-        state, metric = ts_train(rng)
+        state, metric = ts_train(rng, meta_params=meta_params)
         metric["max_ent_loss"] = max_ent_loss["loss"]
         return state, max_ent_state, metric
 
