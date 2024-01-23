@@ -45,7 +45,7 @@ class BayesStochasticBandit(Environment):
         ),
     ):
         super().__init__()
-        self.action_space = action_space
+        self.this_action_space = action_space
         self.best_action_value_fn = best_action_value_fn
         self.prior_fn = prior_fn
         self.reward_dist_fn = reward_dist_fn
@@ -54,7 +54,7 @@ class BayesStochasticBandit(Environment):
     @property
     def default_params(self) -> EnvParams:
         # Default environment parameters
-        return EnvParams()
+        return EnvParams(reward_param=self.prior_fn(jax.random.PRNGKey(42)))
 
     def init_env(self, key: PRNGKey, params: EnvParams) -> EnvParams:
         reward_param = self.prior_fn(key)
@@ -106,7 +106,7 @@ class BayesStochasticBandit(Environment):
         return "BayesMultiArmedBandit"
 
     def action_space(self, params: EnvParams) -> spaces.Space:
-        return self.action_space
+        return self.this_action_space
 
     def observation_space(self, params: EnvParams) -> spaces.Space:
         raise NotImplementedError

@@ -8,7 +8,8 @@ import flax.linen as nn
 from typing import Callable, Union
 
 from experior.envs import Environment
-from experior.utils import VecTrainState, adam_slgd
+from experior.utils import VecTrainState
+from .utils import adam_slgd
 
 
 class Q_TrainState(VecTrainState):

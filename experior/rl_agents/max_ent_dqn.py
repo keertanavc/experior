@@ -7,10 +7,11 @@ import flashbax as fbx
 from typing import Callable, Union, Dict
 
 from experior.envs import Environment
-from experior.utils import VecTrainState, QNetwork, adam_slgd
+from experior.utils import VecTrainState
+from .utils import QNetwork, adam_slgd
 from experior.experts import Trajectory
-from experior.experts.default_discrete_action import expert_log_likelihood_fn
-from .max_ent import MaxEntTrainState
+from experior.experts import expert_log_likelihood_fn
+from experior.max_ent import MaxEntTrainState
 
 
 class Q_TrainState(VecTrainState):

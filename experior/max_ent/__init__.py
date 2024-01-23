@@ -41,7 +41,7 @@ class MaxEntTrainState(struct.PyTreeNode):
         opt_state = jax.vmap(tx.init)(params)
 
         def log_prior_fn(params, traj_log_likelihoods):
-            return jnp.exp(traj_log_likelihoods) @ jnp.exp(params)
+            return jnp.exp(params)@jnp.exp(traj_log_likelihoods)
 
         return cls(
             step=0,
