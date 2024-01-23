@@ -65,7 +65,7 @@ def make_thompson_sampling(
                 grad_log_posterior,
             )
 
-            step_size = langevin_learning_rate / (step_i + 1)
+            step_size = langevin_learning_rate  # / (step_i + 1) # TODO why?
             # Langevin dynamics update rule
             rng, rng_ = jax.random.split(rng)
             num_vars = len(jax.tree_util.tree_leaves(grad_log_posterior))
