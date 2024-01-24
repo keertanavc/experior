@@ -1,11 +1,13 @@
 import jax
 import jax.numpy as jnp
 import chex
+from chex._src.pytypes import PRNGKey
 import numpy as np
 from flax import struct
 from functools import partial
 from typing import Optional, Tuple, Union, Any
 from gymnax.environments import environment, spaces
+from gymnax.environments import EnvParams
 from gymnax.wrappers.purerl import GymnaxWrapper
 from brax import envs
 from brax.envs.wrappers.training import EpisodeWrapper, AutoResetWrapper
@@ -22,6 +24,7 @@ class BraxGymnaxWrapper:
         self._env = env
         self.action_size = env.action_size
         self.observation_size = (env.observation_size,)
+        self.default_params = None
 
     def reset(self, key, params=None):
         state = self._env.reset(key)
@@ -44,7 +47,10 @@ class BraxGymnaxWrapper:
             high=1.0,
             shape=(self._env.action_size,),
         )
-        
+    
+    def init_env(self, key: PRNGKey, params):
+        return params
+
 class ClipAction(GymnaxWrapper):
     def __init__(self, env, low=-1.0, high=1.0):
         super().__init__(env)

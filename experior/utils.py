@@ -10,7 +10,6 @@ from typing import Any, Callable, NamedTuple, Optional, Union
 from flax import core
 from flax import struct
 
-
 def linear_schedule_eps(start_e: float, end_e: float, duration: int, t: int):
     slope = (end_e - start_e) / duration
     return jnp.maximum(slope * t + start_e, end_e)
@@ -43,6 +42,18 @@ def moving_average(data: jnp.array, window_size: int):
     """Smooth data by calculating the moving average over a specified window size."""
     return jnp.convolve(data, jnp.ones(window_size) / window_size, mode="valid")
 
+
+def process_ppo_output(ppo_output, window=5000):
+    r = ppo_output['metrics']['returned_episode_returns']
+    # mean over all actors first
+    avg_over_actors = r.mean(-1)
+    
+    # then mean + std performance over various parallel environments 
+    r_mean = moving_average(avg_over_actors.mean(-1).reshape(-1), window)
+    r_std = moving_average(avg_over_actors.std(-1).reshape(-1), window)
+    
+    return r_mean, r_std
+    
 
 class VecTrainState(struct.PyTreeNode):
     """Train state to handle parallel updates."""

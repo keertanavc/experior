@@ -45,7 +45,8 @@ def make_continuous_ppo_train(
             optax.clip_by_global_norm(max_grad_norm),
             optax.adam(learning_rate=linear_schedule, eps=1e-5),
         )
-        init_x = jnp.zeros((1,) + env.observation_space(env.default_params).shape)
+        #init_x = jnp.zeros((1,) + env.observation_space(env.default_params).shape)
+        init_x = jnp.zeros((1,) + env.observation_size)
         rng, rng_ = jax.random.split(rng)
         train_state = VecTrainState.create(
             apply_fn=actor_critic_network.apply,
@@ -85,9 +86,9 @@ def make_continuous_ppo_train(
                 pi, value = jax.vmap(lambda p, obs: train_state.apply_fn(p, obs))(
                     train_state.params, last_obs
                 )  # shape: (num_envs, num_actors, action_dim), (num_envs, num_actors, 1)
-
                 # TODO make sure it's correct
                 action = pi.sample(seed=rng_)  # shape: (num_envs, num_actors)
+                print(action.shape)
                 log_prob = pi.log_prob(action)  # shape: (num_envs, num_actors)
 
                 # STEP ENV
