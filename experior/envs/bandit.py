@@ -57,7 +57,7 @@ class BayesStochasticBandit(Environment):
     @property
     def default_params(self) -> EnvParams:
         # Default environment parameters
-        return EnvParams(reward_param=self.prior_fn(jax.random.PRNGKey(42)))
+        return EnvParams(reward_param=self.prior_fn(jax.random.PRNGKey(42), None))
 
     def init_env(
         self, key: PRNGKey, params: EnvParams, meta_params: MetaParam = None
