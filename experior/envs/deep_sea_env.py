@@ -25,10 +25,16 @@ class EnvState:
 
 
 last_goal_col_dist = jax.tree_util.Partial(lambda key, size: size - 1)
+uniform_action_mapping = jax.tree_util.Partial(
+    lambda key, size: jax.random.randint(key, shape=(1,), minval=0, maxval=2)
+    * jnp.ones((size, size))
+)
+default_action_mapping = jax.tree_util.Partial(lambda key, size: jnp.ones((size, size)))
 
 
 @struct.dataclass
 class EnvParams:
+    action_mapping: chex.Array
     goal_column: int = None
     unscaled_move_cost: float = 0.01  # the cost of following the optimal path
     max_steps_in_episode: int = 2000
@@ -43,22 +49,28 @@ class DeepSea(Environment):
     def __init__(
         self,
         size: int,
+        action_mapping_dist: Callable[
+            [chex.PRNGKey], chex.Array
+        ] = default_action_mapping,
         goal_column_dist: Callable[[chex.PRNGKey, int], int] = last_goal_col_dist,
     ):
         super().__init__()
         self.size = size
         self.goal_column_dist = goal_column_dist
-        self.action_mapping = jnp.ones([size, size])  # mapping for action right
+        self.action_mapping_dist = action_mapping_dist
 
     @property
     def default_params(self) -> EnvParams:
         # Default environment parameters
-        return EnvParams()
+        return EnvParams(jnp.ones((self.size, self.size)))
 
-    def init_env(self, key: chex.PRNGKey, params: EnvParams) -> EnvParams:
+    def init_env(
+        self, key: chex.PRNGKey, params: EnvParams, meta_params: chex.Array = None
+    ) -> EnvParams:
         """Initialize environment state."""
         goal_column = self.goal_column_dist(key, self.size)
-        return params.replace(goal_column=goal_column)
+        action_mapping = self.action_mapping_dist(key, self.size)
+        return params.replace(goal_column=goal_column, action_mapping=action_mapping)
 
     def step_env(
         self, key: chex.PRNGKey, state: EnvState, action: int, params: EnvParams
@@ -119,7 +131,7 @@ class DeepSea(Environment):
         action_ind = jnp.argmax(
             q_values
         )  # jax.random.choice(key, jnp.where(q_values == q_values.max())[0])
-        right_action_ind = self.action_mapping[state.row, state.column]
+        right_action_ind = params.action_mapping[state.row, state.column]
         return jax.lax.stop_gradient(
             (1.0 - jnp.logical_xor(action_ind, right_action_ind)).astype(int)
         )

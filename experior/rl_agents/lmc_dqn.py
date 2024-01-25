@@ -11,6 +11,8 @@ from experior.envs import Environment
 from experior.utils import VecTrainState
 from .utils import adam_slgd
 
+from gymnax.wrappers.purerl import FlattenObservationWrapper, LogWrapper
+
 
 class Q_TrainState(VecTrainState):
     target_params: flax.core.FrozenDict
@@ -30,6 +32,9 @@ def make_lmc_dqn_train(
     target_network_frequency: int,
     discount_factor: float = 1.0,
 ):
+    env = FlattenObservationWrapper(env)
+    env = LogWrapper(env)
+
     def train(rng):
         # init q-network
         rng, rng_ = jax.random.split(rng)
@@ -123,7 +128,7 @@ def make_lmc_dqn_train(
                 (num_envs,)
             )  # TODO only for int action types
             rng, rng_ = jax.random.split(rng)
-            next_obs, env_state, reward, done, _ = jax.vmap(
+            next_obs, env_state, reward, done, info = jax.vmap(
                 env.step, in_axes=(0, 0, 0, 0)
             )(jax.random.split(rng_, num_envs), env_state, action, env_params)
 
@@ -164,7 +169,12 @@ def make_lmc_dqn_train(
             )
 
             runner_state = (next_obs, env_state, q_state, rng, buffer_state)
-            return runner_state, {"loss": loss, "reward": reward, "done": done}
+            return runner_state, {
+                "loss": loss,
+                "reward": reward,
+                "done": done,
+                "info": info,
+            }
 
         runner_state = (obs, env_state, q_state, rng, buffer_state)
         runner_state, output = jax.lax.scan(_env_step, runner_state, jnp.arange(steps))

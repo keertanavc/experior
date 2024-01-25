@@ -13,12 +13,14 @@ from experior.experts import Trajectory
 from experior.experts import expert_log_likelihood_fn
 from experior.max_ent import MaxEntTrainState
 
+from gymnax.wrappers.purerl import FlattenObservationWrapper, LogWrapper
+
 
 class Q_TrainState(VecTrainState):
     target_params: flax.core.FrozenDict
 
 
-# TODO maybe try more optimizers (adamw, with graident clip, etc)
+# TODO maybe try more optimizers (adamw, with graident clip, etc) / see if we can increase both beta and lambda together?
 def make_max_ent_dqn_train(
     env: Environment,
     q_network: QNetwork,
@@ -40,6 +42,9 @@ def make_max_ent_dqn_train(
     slgd_updates_per_step: int = 1,
     discount_factor: float = 1.0,
 ):
+    env = FlattenObservationWrapper(env)
+    env = LogWrapper(env)
+
     # TODO have fixed rng key for env for all the agents
     def train(rng, expert_trajectories: Trajectory):
         # init q-network
@@ -148,6 +153,7 @@ def make_max_ent_dqn_train(
             unobs_state: VecTrainState,
             max_ent_state: MaxEntTrainState,
             batch: Dict,
+            step_i: int,
         ):
             # shapes: (batch_size, num_envs, ...)
             obs, action, next_obs, reward, done = (
@@ -188,7 +194,8 @@ def make_max_ent_dqn_train(
 
                 # the loss mean over all envs
                 loss = (
-                    0.5 * jnp.sum((q_pred - q_value) ** 2, axis=0) - max_ent_log_pdf
+                    0.5 * jnp.sum((q_pred - q_value) ** 2, axis=0) * step_i / batch_size
+                    - max_ent_log_pdf
                 ).mean()
                 return loss
 
@@ -220,11 +227,12 @@ def make_max_ent_dqn_train(
                     in_axes=(0, None),
                 )(q_state.params, sampled_unobserved_contexts)
 
-                max_ent_update_step = max_ent_state.make_max_ent_update_step(
+                (
+                    max_ent_state,
+                    max_ent_update_step,
+                ) = max_ent_state.make_max_ent_update_step(
                     sampled_log_likelihoods, init_emp_ent=0.0  # TODO fix
                 )
-
-                max_ent_s = max_ent_state.reset_opt_state()  # TODO fix
 
                 max_ent_s, metrics = jax.lax.scan(
                     max_ent_update_step,
@@ -252,7 +260,7 @@ def make_max_ent_dqn_train(
                 (num_envs,)
             )  # TODO only for int action types
             rng, rng_ = jax.random.split(rng)
-            next_obs, env_state, reward, done, _ = jax.vmap(
+            next_obs, env_state, reward, done, info = jax.vmap(
                 env.step, in_axes=(0, 0, 0, 0)
             )(jax.random.split(rng_, num_envs), env_state, action, env_params)
 
@@ -277,7 +285,7 @@ def make_max_ent_dqn_train(
                 def _update_q_network(runner_state, _):
                     (qs, us) = runner_state
                     l, qs, us = update_q_network(
-                        qs, us, max_ent_state, batch.experience
+                        qs, us, max_ent_state, batch.experience, i
                     )
                     runner_state = (qs, us)
                     return runner_state, l
@@ -315,7 +323,12 @@ def make_max_ent_dqn_train(
                 rng,
                 buffer_state,
             )
-            return runner_state, {"loss": loss, "reward": reward, "done": done}
+            return runner_state, {
+                "loss": loss,
+                "reward": reward,
+                "done": done,
+                "info": info,
+            }
 
         runner_state = (
             obs,

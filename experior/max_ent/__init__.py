@@ -18,12 +18,20 @@ class MaxEntTrainState(struct.PyTreeNode):
     tx: optax.GradientTransformation = struct.field(pytree_node=False)
     opt_state: optax.OptState = struct.field(pytree_node=True)
     log_prior_fn: Callable = struct.field(pytree_node=False)
+    scaling_factor: float = 0.0
+    max_param_value: float = 10.0
 
     def apply_gradients(self, *, grads, **kwargs):
         updates, new_opt_state = jax.vmap(self.tx.update)(
             grads, self.opt_state, self.params
         )
         new_params = jax.vmap(optax.apply_updates)(self.params, updates)
+
+        # TODO clip the new params
+        new_params = jax.tree_util.tree_map(
+            lambda p: jnp.clip(p, -self.max_param_value, self.max_param_value),
+            new_params,
+        )
         return self.replace(
             step=self.step + 1,
             params=new_params,
@@ -31,8 +39,8 @@ class MaxEntTrainState(struct.PyTreeNode):
             **kwargs,
         )
 
-    def reset_opt_state(self):
-        return self.replace(opt_state=jax.vmap(self.tx.init)(self.params))
+    # def reset_opt_state(self):
+    #     return self.replace(opt_state=jax.vmap(self.tx.init)(self.params))
 
     @classmethod
     def create(cls, *, rng, n_trajectory, lambda_, epsilon, tx, num_envs, **kwargs):
@@ -42,19 +50,21 @@ class MaxEntTrainState(struct.PyTreeNode):
 
         def log_prior_fn(params, traj_log_likelihoods):
             # TODO makes sure the scale is not too large
-            params = (
-                params - jnp.log(n_trajectory) - jax.lax.stop_gradient(params.mean())
+            log_prior = jnp.einsum(
+                "ep, p->e",
+                jnp.exp(params - jnp.log(n_trajectory)),
+                jnp.exp(traj_log_likelihoods),
             )
-            return jnp.exp(params) @ jnp.exp(traj_log_likelihoods)
+            return log_prior
 
         return cls(
             step=0,
-            log_prior_fn=log_prior_fn,
             params=params,
             tx=tx,
             opt_state=opt_state,
             lambda_=lambda_,
             epsilon=epsilon,
+            log_prior_fn=log_prior_fn,
             **kwargs,
         )
 
@@ -88,4 +98,12 @@ class MaxEntTrainState(struct.PyTreeNode):
             new_state = state.apply_gradients(grads=grad)
             return new_state, {"loss": loss}
 
-        return max_ent_update_step
+        scaling_factor = jax.lax.stop_gradient(
+            jnp.einsum(
+                "ep, enp->en", jnp.exp(self.params), jnp.exp(sampled_log_likelihoods)
+            ).mean(axis=-1)
+        )
+        return (
+            self.replace(scaling_factor=scaling_factor),
+            max_ent_update_step,
+        )
