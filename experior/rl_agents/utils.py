@@ -104,8 +104,8 @@ class ContinuousActorCritic(nn.Module):
         )(actor_mean)
         
         # Actor output
-        actor_logstd = self.param('log_std', nn.initializers.zeros, (self.action_dim,))
-        pi = distrax.MultivariateNormalDiag(actor_mean, jnp.exp(actor_logstd))
+        actor_logtstd = self.param('log_std', nn.initializers.zeros, (self.action_dim,))
+        pi = distrax.MultivariateNormalDiag(actor_mean, jnp.exp(actor_logtstd))
         
         # Critic features
         critic = nn.Dense(
