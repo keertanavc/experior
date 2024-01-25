@@ -1,21 +1,17 @@
 import optax
 import jax
-import chex
-
 import jax.numpy as jnp
-import flax.linen as nn
+import numpy as np
 
-from typing import Any, Callable, NamedTuple, Optional, Union
+from typing import Any, Callable
 
 from flax import core
 from flax import struct
 
+
 def linear_schedule_eps(start_e: float, end_e: float, duration: int, t: int):
     slope = (end_e - start_e) / duration
     return jnp.maximum(slope * t + start_e, end_e)
-
-
-
 
 
 # adapted from https://github.com/unstable-zeros/tasil
@@ -44,16 +40,16 @@ def moving_average(data: jnp.array, window_size: int):
 
 
 def process_ppo_output(ppo_output, window=5000):
-    r = ppo_output['metrics']['returned_episode_returns']
+    r = ppo_output["metrics"]["returned_episode_returns"]
     # mean over all actors first
     avg_over_actors = r.mean(-1)
-    
-    # then mean + std performance over various parallel environments 
+
+    # then mean + std performance over various parallel environments
     r_mean = moving_average(avg_over_actors.mean(-1).reshape(-1), window)
     r_std = moving_average(avg_over_actors.std(-1).reshape(-1), window)
-    
+
     return r_mean, r_std
-    
+
 
 class VecTrainState(struct.PyTreeNode):
     """Train state to handle parallel updates."""
@@ -102,3 +98,63 @@ class VecTrainState(struct.PyTreeNode):
             opt_state=opt_state,
             **kwargs,
         )
+
+
+import matplotlib as mpl
+import matplotlib.pyplot as plt
+
+
+def latexify(fig_width, fig_height, font_size=7, legend_size=5, labelsize=7):
+    """Set up matplotlib's RC params for LaTeX plotting."""
+    params = {
+        "backend": "ps",
+        "text.latex.preamble": "\\usepackage{amsmath,amsfonts,amssymb,amsthm, mathtools,times}",
+        "axes.labelsize": font_size,
+        "axes.titlesize": font_size,
+        "legend.fontsize": legend_size,
+        "xtick.labelsize": labelsize,
+        "ytick.labelsize": labelsize,
+        "text.usetex": True,
+        "figure.figsize": [fig_width, fig_height],
+        "font.family": "serif",
+        "xtick.minor.size": 0.5,
+        "xtick.major.pad": 1.5,
+        "xtick.major.size": 1,
+        "ytick.minor.size": 0.5,
+        "ytick.major.pad": 1.5,
+        "ytick.major.size": 1,
+    }
+
+    mpl.rcParams.update(params)
+    plt.rcParams.update(params)
+
+
+COLORS = {
+    "green": "#12f913",
+    "blue": "#0000ff",
+    "red": "#ff0000",
+    "pink": "#fb87c4",
+    "black": "#000000",
+}
+
+LIGHT_COLORS = {
+    "blue": (0.237808, 0.688745, 1.0),
+    "red": (1.0, 0.519599, 0.309677),
+    "green": (0.0, 0.790412, 0.705117),
+    "pink": (0.936386, 0.506537, 0.981107),
+    "yellow": (0.686959, 0.690574, 0.0577502),
+}
+
+DARK_COLORS = {
+    "green": "#3E9651",
+    "red": "#CC2529",
+    "blue": "#396AB1",
+    "black": "#535154",
+}
+
+GOLDEN_RATIO = (np.sqrt(5) - 1.0) / 2
+
+cm = 1 / 2.54
+FIG_WIDTH = 17 * cm
+FONT_SIZE = 11
+LEGEND_SIZE = 8
