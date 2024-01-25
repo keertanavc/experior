@@ -32,10 +32,18 @@ def make_discrete_ppo_train(
     env = LogWrapper(env)
 
     def train(rng):
+
+        def linear_schedule(count):
+          frac = (
+              1.0
+              - (count // (num_minibatches * epochs_per_iteration))
+              / update_nums
+          )
+          return learning_rate * frac
         # init the actor-critic network
         tx = optax.chain(
             optax.clip_by_global_norm(max_grad_norm),
-            optax.adam(learning_rate=learning_rate, eps=1e-5),
+            optax.adam(learning_rate=linear_schedule, eps=1e-5),
         )
         init_x = jnp.zeros((1,) + env.observation_space(env.default_params).shape)
         rng, rng_ = jax.random.split(rng)
@@ -74,11 +82,9 @@ def make_discrete_ppo_train(
 
                 # SELECT ACTION
                 rng, rng_ = jax.random.split(rng)
-                pi, value = jax.vmap(lambda p, obs: train_state.apply_fn(p, obs))(
+                pi, value = jax.vmap(lambda p, obs: train_state.apply_fn(p, obs), in_axes=(0, 0), out_axes=(0))(
                     train_state.params, last_obs
                 )  # shape: (num_envs, num_actors, action_dim), (num_envs, num_actors, 1)
-
-                # TODO make sure it's correct
                 action = pi.sample(seed=rng_)  # shape: (num_envs, num_actors)
                 log_prob = pi.log_prob(action)  # shape: (num_envs, num_actors)
 
