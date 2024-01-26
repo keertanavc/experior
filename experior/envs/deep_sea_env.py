@@ -133,7 +133,7 @@ class DeepSea(Environment):
         )  # jax.random.choice(key, jnp.where(q_values == q_values.max())[0])
         right_action_ind = params.action_mapping[state.row, state.column]
         return jax.lax.stop_gradient(
-            (1.0 - jnp.logical_xor(action_ind, right_action_ind)).astype(int)
+            (1.0 - jnp.logical_xor(action_ind, right_action_ind)).astype(jnp.int32)
         )
 
     def reset_env(

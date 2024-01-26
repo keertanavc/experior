@@ -20,74 +20,58 @@ class Q_TrainState(VecTrainState):
     target_params: flax.core.FrozenDict
 
 
-# TODO maybe try more optimizers (adamw, with graident clip, etc) / see if we can increase both beta and lambda together?
+# TODO maybe try more optimizers (adamw, with graident clip, etc)
+# TODO see if we can increase both beta and lambda together?
+# TODO different rngs for env and algorithm
 def make_max_ent_dqn_train(
     env: Environment,
     q_network: QNetwork,
-    learning_rate: Union[float, Callable[[int], float]],
-    temperature: Union[float, Callable[[int], float]],
     num_envs: int,
     buffer_size: int,
     batch_size: int,
     steps: int,
-    train_frequency: int,
-    target_network_frequency: int,
-    max_ent_lambda: float,
-    max_ent_epsilon: float,
-    max_ent_learning_rate: Union[float, Callable[[int], float]],
     max_ent_prior_n_samples: int,
     max_ent_updates_per_step: int,
-    max_ent_updates_frequency: int,
-    expert_beta: float,
     slgd_updates_per_step: int = 1,
+    bias_factor: float = -1.0,
     discount_factor: float = 1.0,
 ):
     env = FlattenObservationWrapper(env)
     env = LogWrapper(env)
 
-    # TODO have fixed rng key for env for all the agents
-    def train(rng, expert_trajectories: Trajectory):
+    def train(
+        rng,
+        expert_trajectories: Trajectory,
+        learning_rate: Union[float, Callable[[int], float]],
+        temperature: Union[float, Callable[[int], float]],
+        train_frequency: int,
+        target_network_frequency: int,
+        max_ent_lambda: float,
+        max_ent_epsilon: float,
+        max_ent_learning_rate: Union[float, Callable[[int], float]],
+        max_ent_updates_frequency: int,
+        expert_beta: float,
+    ):
         # init q-network
         rng, rng_ = jax.random.split(rng)
         env_params = env.default_params
         obs, _ = env.reset(rng_, env_params)
-        rng, rng_ = jax.random.split(rng)
+        rng, k1, k2 = jax.random.split(rng)
         tx = adam_slgd(
-            learning_rate=learning_rate, temperature=temperature, rng_key=rng_
+            learning_rate=learning_rate,
+            temperature=temperature,
+            rng_key=k1,
+            bias_factor=bias_factor,
         )
-        rng, rng_ = jax.random.split(rng)
         q_state = Q_TrainState.create(
             apply_fn=q_network.apply,
             params=jax.vmap(q_network.init, in_axes=(0, None))(
-                jax.random.split(rng_, num_envs), obs[None, ...]
+                jax.random.split(k2, num_envs), obs[None, ...]
             ),
             target_params=jax.vmap(q_network.init, in_axes=(0, None))(
-                jax.random.split(rng_, num_envs), obs[None, ...]
+                jax.random.split(k2, num_envs), obs[None, ...]
             ),
             tx=tx,
-        )
-        rng, rng_ = jax.random.split(rng)
-        unobs_tx = adam_slgd(
-            learning_rate=learning_rate, temperature=temperature, rng_key=rng_
-        )  # TODO grad clip
-        rng, rng_ = jax.random.split(rng)
-        unobs_state = VecTrainState.create(
-            apply_fn=None,
-            params=jax.random.normal(rng_, (num_envs, q_network.n_features)),
-            tx=unobs_tx,
-        )
-
-        # max entropy prior
-        rng, rng_ = jax.random.split(rng)
-        n_trajectory = expert_trajectories.obs.shape[0]
-        horizon = expert_trajectories.obs.shape[1]  # TODO assumes horizon
-        max_ent_state = MaxEntTrainState.create(
-            rng=rng_,
-            n_trajectory=n_trajectory,
-            lambda_=max_ent_lambda,
-            epsilon=max_ent_epsilon,
-            tx=optax.adam(max_ent_learning_rate),
-            num_envs=num_envs,
         )
 
         # set up the environment
@@ -104,7 +88,7 @@ def make_max_ent_dqn_train(
         rng, rng_ = jax.random.split(rng)
         buffer = fbx.make_item_buffer(
             max_length=buffer_size,
-            min_length=batch_size,
+            min_length=1,
             sample_batch_size=batch_size,
         )
 
@@ -117,6 +101,33 @@ def make_max_ent_dqn_train(
                 "done": jnp.zeros((num_envs,), dtype=jnp.bool_),
                 "next_obs": obs,
             }
+        )
+
+        # max entropy prior and unobserved contexts
+        rng, rng_ = jax.random.split(rng)
+        unobs_tx = adam_slgd(
+            learning_rate=learning_rate,
+            temperature=temperature,
+            rng_key=rng_,
+            bias_factor=bias_factor,
+        )  # TODO grad clip
+        rng, rng_ = jax.random.split(rng)
+        unobs_state = VecTrainState.create(
+            apply_fn=None,
+            params=jax.random.normal(rng_, (num_envs, q_network.n_features)),
+            tx=unobs_tx,
+        )
+
+        rng, rng_ = jax.random.split(rng)
+        n_trajectory = expert_trajectories.obs.shape[0]
+        horizon = expert_trajectories.obs.shape[1]  # TODO assumes horizon
+        max_ent_state = MaxEntTrainState.create(
+            rng=rng_,
+            n_trajectory=n_trajectory,
+            lambda_=max_ent_lambda,
+            epsilon=max_ent_epsilon,
+            tx=optax.adam(max_ent_learning_rate),
+            num_envs=num_envs,
         )
 
         # useful indices
@@ -185,7 +196,7 @@ def make_max_ent_dqn_train(
                     get_expert_log_likelihood, in_axes=(0, 0)
                 )(
                     q_state.params, unobs_params
-                )  # TODO note that we don't want to take grad w.r.t. q_params for traj_log_likelihoods
+                )  # Note that we don't want to take grad w.r.t. q_params for traj_log_likelihoods
 
                 # shape: (num_envs,)
                 max_ent_log_pdf = jax.vmap(max_ent_state.log_prior_fn)(
@@ -220,7 +231,6 @@ def make_max_ent_dqn_train(
 
             # train max entropy prior
             # shape: (num_envs, max_ent_prior_n_samples, n_trajectory)
-            # TODO we may need to reset the optimizer here
             def _max_ent_train():
                 sampled_log_likelihoods = jax.vmap(
                     jax.vmap(get_expert_log_likelihood, in_axes=(None, 0)),

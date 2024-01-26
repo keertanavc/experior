@@ -20,23 +20,25 @@ class Q_TrainState(VecTrainState):
 def make_dqn_train(
     env: Environment,
     q_network: nn.Module,
-    learning_rate: Union[float, Callable[[int], float]],
     num_envs: int,
     buffer_size: int,
     batch_size: int,
     steps: int,
-    start_epsilon: float,
-    end_epsilon: float,
-    exploration_fraction: float,
-    learning_starts: int,
-    train_frequency: int,
-    target_network_frequency: int,
     discount_factor: float = 1.0,
 ):
     env = FlattenObservationWrapper(env)
     env = LogWrapper(env)
 
-    def train(rng):
+    def train(
+        rng,
+        learning_rate: Union[float, Callable[[int], float]],
+        start_epsilon: float,
+        end_epsilon: float,
+        exploration_fraction: float,
+        learning_starts: int,
+        train_frequency: int,
+        target_network_frequency: int,
+    ):
         # init q-network
         rng, rng_ = jax.random.split(rng)
         env_params = env.default_params
@@ -66,7 +68,7 @@ def make_dqn_train(
         rng, rng_ = jax.random.split(rng)
         buffer = fbx.make_item_buffer(
             max_length=buffer_size,
-            min_length=batch_size,
+            min_length=1,
             sample_batch_size=batch_size,
         )
 
