@@ -3,9 +3,10 @@ import jax.numpy as jnp
 import flax.linen as nn
 import optax
 from typing import Union, Callable
-from experior.experts import Trajectory
+from experior.experts import Trajectory, expert_log_likelihood_fn
 from experior.envs import Environment
 from experior.utils import VecTrainState
+from experior.max_ent import MaxEntTrainState
 
 from gymnax.wrappers.purerl import FlattenObservationWrapper, LogWrapper
 
