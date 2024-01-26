@@ -22,26 +22,35 @@ class Q_TrainState(VecTrainState):
 def make_lmc_dqn_train(
     env: Environment,
     q_network: nn.Module,
-    learning_rate: Union[float, Callable[[int], float]],
-    temperature: Union[float, Callable[[int], float]],
     num_envs: int,
     buffer_size: int,
     batch_size: int,
     steps: int,
-    train_frequency: int,
-    target_network_frequency: int,
+    slgd_updates_per_step: int = 1,
+    bias_factor: float = -1.0,
     discount_factor: float = 1.0,
 ):
     env = FlattenObservationWrapper(env)
     env = LogWrapper(env)
 
-    def train(rng):
+    def train(
+        rng,
+        learning_rate: Union[float, Callable[[int], float]],
+        temperature: Union[float, Callable[[int], float]],
+        train_frequency: int,
+        target_network_frequency: int,
+    ):
         # init q-network
         rng, rng_ = jax.random.split(rng)
         env_params = env.default_params
         obs, _ = env.reset(rng_, env_params)
         rng, k1, k2 = jax.random.split(rng, 3)
-        tx = adam_slgd(learning_rate=learning_rate, temperature=temperature, rng_key=k1)
+        tx = adam_slgd(
+            learning_rate=learning_rate,
+            temperature=temperature,
+            rng_key=k1,
+            bias_factor=bias_factor,
+        )
         q_state = Q_TrainState.create(
             apply_fn=q_network.apply,
             params=jax.vmap(q_network.init, in_axes=(0, None))(
@@ -66,7 +75,7 @@ def make_lmc_dqn_train(
         rng, rng_ = jax.random.split(rng)
         buffer = fbx.make_item_buffer(
             max_length=buffer_size,
-            min_length=batch_size,
+            min_length=1,
             sample_batch_size=batch_size,
         )
 
@@ -116,7 +125,7 @@ def make_lmc_dqn_train(
                 q_state.params
             )
             q_state = q_state.apply_gradients(grads=grad)
-            return loss_value, q_pred, q_state
+            return loss_value, q_state
 
         def _env_step(runner_state, i):
             obs, env_state, q_state, rng, buffer_state = runner_state
@@ -148,15 +157,22 @@ def make_lmc_dqn_train(
                 # sample from replay buffer
                 k, rng_ = jax.random.split(rng)
                 batch = buffer.sample(buffer_state, rng_)
+
+                def _update_q_network(qs, _):
+                    l, qs = update_q_network(qs, batch.experience)
+                    return qs, l
+
                 # train q network
-                l, qp, qs = update_q_network(q_state, batch.experience)
-                return k, l, qp, qs
+                q_s, loss = jax.lax.scan(
+                    _update_q_network, q_state, jnp.arange(slgd_updates_per_step)
+                )
+                return k, loss.mean(), q_s
 
             def _no_train():
-                return rng, 0.0, jnp.zeros((batch_size, num_envs)), q_state
+                return rng, 0.0, q_state
 
             # training
-            rng, loss, q_pred, q_state = jax.lax.cond(
+            rng, loss, q_state = jax.lax.cond(
                 i % train_frequency == 0,
                 _train,
                 _no_train,

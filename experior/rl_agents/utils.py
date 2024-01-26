@@ -76,6 +76,7 @@ class ActorCritic(nn.Module):
 
         return pi, jnp.squeeze(critic, axis=-1)
 
+
 class ContinuousActorCritic(nn.Module):
     action_dim: Sequence[int]
     activation: str = "tanh"
@@ -88,8 +89,8 @@ class ContinuousActorCritic(nn.Module):
             activation = nn.tanh
         else:
             raise NotImplementedError
-        #x = x.reshape((x.shape[0], -1))
-        
+        # x = x.reshape((x.shape[0], -1))
+
         # Actor features
         actor_mean = nn.Dense(
             256, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
@@ -102,11 +103,11 @@ class ContinuousActorCritic(nn.Module):
         actor_mean = nn.Dense(
             self.action_dim, kernel_init=orthogonal(0.01), bias_init=constant(0.0)
         )(actor_mean)
-        
+
         # Actor output
-        actor_logtstd = self.param('log_std', nn.initializers.zeros, (self.action_dim,))
+        actor_logtstd = self.param("log_std", nn.initializers.zeros, (self.action_dim,))
         pi = distrax.MultivariateNormalDiag(actor_mean, jnp.exp(actor_logtstd))
-        
+
         # Critic features
         critic = nn.Dense(
             256, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
@@ -116,14 +117,14 @@ class ContinuousActorCritic(nn.Module):
             256, kernel_init=orthogonal(np.sqrt(2)), bias_init=constant(0.0)
         )(critic)
         critic = activation(critic)
-        
+
         # Critic output
         critic = nn.Dense(1, kernel_init=orthogonal(1.0), bias_init=constant(0.0))(
             critic
         )
 
         return pi, jnp.squeeze(critic, axis=-1)
-    
+
 
 # adam slgd optimizer
 def adam_lmc(
@@ -167,8 +168,6 @@ def adam_lmc(
         mu = optax.update_moment(updates, state.mu, b1, 1)
         nu = optax.update_moment_per_elem_norm(updates, state.nu, b2, 2)
         count_inc = optax.safe_int32_increment(state.count)
-        # mu_hat = optax.bias_correction(mu, b1, count_inc)
-        # nu_hat = optax.bias_correction(nu, b2, count_inc)
         updates = jax.tree_util.tree_map(
             lambda g, m, v: g + bias_factor * m / (jnp.sqrt(v + eps_root) + eps),
             updates,
@@ -227,7 +226,6 @@ def adam_slgd(
     learning_rate: Union[float, Callable[[int], float]],
     temperature: Union[float, Callable[[int], float]],
     rng_key: chex.PRNGKey,
-    default: bool = True,
     b1: float = 0.9,
     b2: float = 0.999,
     bias_factor: float = 1.0,
@@ -243,7 +241,7 @@ def adam_slgd(
             eps_root=eps_root,
             mu_dtype=mu_dtype,
         )
-        if default
+        if bias_factor <= 0.0
         else adam_lmc(
             b1=b1,
             b2=b2,
