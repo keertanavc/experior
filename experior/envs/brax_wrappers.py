@@ -1,13 +1,8 @@
 import jax
 import jax.numpy as jnp
-import chex
 from chex._src.pytypes import PRNGKey
-import numpy as np
 from flax import struct
-from functools import partial
-from typing import Optional, Tuple, Union, Any
 from gymnax.environments import environment, spaces
-from gymnax.environments import EnvParams
 from gymnax.wrappers.purerl import GymnaxWrapper
 from brax import envs
 from brax.envs.wrappers.training import EpisodeWrapper, AutoResetWrapper
